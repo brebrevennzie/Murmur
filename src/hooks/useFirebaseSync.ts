@@ -3,6 +3,7 @@ import { User, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEma
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Student, SyllabusProgram } from '../types';
+import { syncAllStudents } from '../utils/paymentSync';
 
 export function useFirebaseSync(
   students: Student[],
@@ -22,8 +23,9 @@ export function useFirebaseSync(
   const programsRef = useRef<SyllabusProgram[]>(syllabusPrograms);
   programsRef.current = syllabusPrograms;
 
-  // Track if we are currently applying an update from the database to avoid infinite loop
-  const isApplyingDbUpdate = useRef(false);
+  // Track the last synced data from/to the cloud to avoid redundant or loop writes/overwrites
+  const lastCloudStudentsRef = useRef<string>('');
+  const lastCloudProgramsRef = useRef<string>('');
 
   // Monitor auth status
   useEffect(() => {
@@ -48,14 +50,16 @@ export function useFirebaseSync(
       if (docSnap.exists()) {
         const data = docSnap.data();
         
-        isApplyingDbUpdate.current = true;
-        
         if (data.students) {
-          // Check if different to avoid redundant re-renders
-          const dbStudentsStr = JSON.stringify(data.students);
+          // Synchronize calculations immediately on retrieval from firestore
+          const dbStudents = syncAllStudents(data.students);
+          const dbStudentsStr = JSON.stringify(dbStudents);
           const localStudentsStr = JSON.stringify(studentsRef.current);
+          
+          lastCloudStudentsRef.current = dbStudentsStr;
+          
           if (dbStudentsStr !== localStudentsStr) {
-            setStudents(data.students);
+            setStudents(dbStudents);
             // Also store locally for offline backup
             localStorage.setItem('tutor_students_db', dbStudentsStr);
           }
@@ -64,13 +68,15 @@ export function useFirebaseSync(
         if (data.programs) {
           const dbProgramsStr = JSON.stringify(data.programs);
           const localProgramsStr = JSON.stringify(programsRef.current);
+          
+          lastCloudProgramsRef.current = dbProgramsStr;
+          
           if (dbProgramsStr !== localProgramsStr) {
             setSyllabusPrograms(data.programs);
             localStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
           }
         }
         
-        isApplyingDbUpdate.current = false;
         setSyncStatus('saved');
       } else {
         // Document doesn't exist yet on firestore, let's push local data as the starting state
@@ -86,7 +92,17 @@ export function useFirebaseSync(
 
   // Push changes to cloud whenever students or programs change (de-bounced)
   useEffect(() => {
-    if (!user || isApplyingDbUpdate.current) return;
+    if (!user) return;
+
+    // Check if the current state is identical to our last cloud transaction
+    const currentStudentsStr = JSON.stringify(students);
+    const currentProgramsStr = JSON.stringify(syllabusPrograms);
+
+    if (currentStudentsStr === lastCloudStudentsRef.current && 
+        currentProgramsStr === lastCloudProgramsRef.current) {
+      setSyncStatus('saved');
+      return;
+    }
 
     setSyncStatus('syncing');
     const delayDebounce = setTimeout(() => {
@@ -99,11 +115,17 @@ export function useFirebaseSync(
   const pushLocalToCloud = async (userId: string, sList: Student[], pList: SyllabusProgram[]) => {
     try {
       const userDocRef = doc(db, 'users', userId);
-      await setDoc(userDocRef, {
+      const dataToSave = {
         students: sList,
         programs: pList,
         lastUpdated: new Date().toISOString()
-      }, { merge: true });
+      };
+      
+      // Cache locally what we are sending so the push effect is pacified
+      lastCloudStudentsRef.current = JSON.stringify(sList);
+      lastCloudProgramsRef.current = JSON.stringify(pList);
+      
+      await setDoc(userDocRef, dataToSave, { merge: true });
       setSyncStatus('saved');
     } catch (e) {
       console.error('Failed to sync to Firestore:', e);

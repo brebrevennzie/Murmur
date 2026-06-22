@@ -214,11 +214,26 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
   
   const currentMonthLabel = monthNamesAccusative[currentMonthIdx];
 
+  // Timezone-safe month/year parser to prevent offset mismatches (e.g. UTC-3 shifts June 1st to May 31st)
+  const getYearAndMonth = (dateStr: string) => {
+    if (!dateStr) return { year: 0, month: -1 };
+    const parts = dateStr.split('-');
+    if (parts.length >= 2) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1; // months are 0-indexed in JS Dates
+      if (!isNaN(y) && !isNaN(m)) {
+        return { year: y, month: m };
+      }
+    }
+    const pDate = new Date(dateStr);
+    return { year: pDate.getFullYear(), month: pDate.getMonth() };
+  };
+
   // Real earnings this month: payments received in current month
   const realEarningsThisMonth = students.reduce((sum, s) => {
     const studentPaymentsThisMonth = s.payments.filter(p => {
-      const pDate = new Date(p.date);
-      return pDate.getFullYear() === currentYear && pDate.getMonth() === currentMonthIdx;
+      const { year, month } = getYearAndMonth(p.date);
+      return year === currentYear && month === currentMonthIdx;
     });
     return sum + studentPaymentsThisMonth.reduce((acc, p) => acc + p.amount, 0);
   }, 0);
@@ -252,9 +267,16 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
     return sum + (occurrences * student.hourlyRate);
   }, 0);
 
-  // Unpaid balance alerts (students which have negative balanceLessons)
-  const debtStudents = students.filter(s => s.isActive && s.balanceLessons < 0);
+  // Unpaid balance alerts (students which have negative balanceLessons or unpaid completed lessons)
+  const debtStudents = students.filter(s => s.isActive && (s.balanceLessons < 0 || s.lessons.some(l => (l.status === 'attended' || l.status === 'missed_unexcused') && !l.isPaid)));
   const debtCount = debtStudents.length;
+
+  // Calculate total unpaid debt in rubles across all active students (based on negative lesson balances)
+  const totalDebtRubles = students.reduce((sum, s) => {
+    if (!s.isActive) return sum;
+    const debtLessons = s.balanceLessons < 0 ? -s.balanceLessons : 0;
+    return sum + (debtLessons * s.hourlyRate);
+  }, 0);
 
   // Average trial score across all students
   let totalMockExamsCount = 0;
@@ -1039,10 +1061,12 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
           </div>
           <div>
             <span className="text-[10px] text-white/40 font-sans tracking-wide block">Долги по оплате</span>
-            <span className={`text-xl font-mono font-bold ${debtCount > 0 ? 'text-rose-400' : 'text-white'}`}>
-              {debtCount}
+            <span className={`text-xl font-mono font-bold ${totalDebtRubles > 0 ? 'text-rose-400' : 'text-white'}`}>
+              {totalDebtRubles.toLocaleString()} ₽
             </span>
-            <span className="text-[9px] text-white/30 block">требуют пополнения</span>
+            <span className="text-[9px] text-white/30 block">
+              {debtCount > 0 ? `${debtCount} учеников требуют пополнения` : 'нет задолженностей'}
+            </span>
           </div>
         </div>
       </div>

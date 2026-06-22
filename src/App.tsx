@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SyllabusProgram } from './types';
 import { getInitialStudents, saveStudents, INITIAL_STUDENTS, getInitialPrograms, savePrograms } from './data';
+import { syncAllStudents } from './utils/paymentSync';
 import { StudentCard } from './components/StudentCard';
 import { StudentDetail } from './components/StudentDetail';
 import { DashboardStats } from './components/DashboardStats';
@@ -51,7 +52,7 @@ export default function App() {
 
   // Load students and programs on start
   useEffect(() => {
-    setStudents(getInitialStudents());
+    setStudents(syncAllStudents(getInitialStudents()));
     setSyllabusPrograms(getInitialPrograms());
   }, []);
 
@@ -62,8 +63,9 @@ export default function App() {
 
   // Save students on change
   const handleUpdateStudents = (updatedStudents: Student[]) => {
-    setStudents(updatedStudents);
-    saveStudents(updatedStudents);
+    const synced = syncAllStudents(updatedStudents);
+    setStudents(synced);
+    saveStudents(synced);
   };
 
   // Add individual student
@@ -144,7 +146,7 @@ export default function App() {
 
   // Debtors count calculation
   const debtCount = useMemo(() => {
-    return students.filter(s => s.isActive && s.balanceLessons < 0).length;
+    return students.filter(s => s.isActive && (s.balanceLessons < 0 || s.lessons.some(l => (l.status === 'attended' || l.status === 'missed_unexcused') && !l.isPaid))).length;
   }, [students]);
 
   // Filter Pipeline (No Search Bar, purely your personal categorizers)
@@ -152,7 +154,7 @@ export default function App() {
     return students
       .filter(student => {
         const matchesSubject = selectedSubject === 'all' || student.subject === selectedSubject;
-        const matchesDebt = !filterDebtOnly || student.balanceLessons < 0;
+        const matchesDebt = !filterDebtOnly || (student.balanceLessons < 0 || student.lessons.some(l => (l.status === 'attended' || l.status === 'missed_unexcused') && !l.isPaid));
 
         return matchesSubject && matchesDebt;
       })
