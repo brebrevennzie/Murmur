@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Student, SyllabusProgram } from '../types';
 import { syncAllStudents } from '../utils/paymentSync';
+import { safeStorage } from '../utils/safeStorage';
 
 export function useFirebaseSync(
   students: Student[],
@@ -61,7 +62,7 @@ export function useFirebaseSync(
           if (dbStudentsStr !== localStudentsStr) {
             setStudents(dbStudents);
             // Also store locally for offline backup
-            localStorage.setItem('tutor_students_db', dbStudentsStr);
+            safeStorage.setItem('tutor_students_db', dbStudentsStr);
           }
         }
         
@@ -73,7 +74,7 @@ export function useFirebaseSync(
           
           if (dbProgramsStr !== localProgramsStr) {
             setSyllabusPrograms(data.programs);
-            localStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
+            safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
           }
         }
         

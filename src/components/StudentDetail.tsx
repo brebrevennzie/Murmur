@@ -3,6 +3,7 @@ import { Student, MockExam, Lesson, Payment, TopicGap } from '../types';
 import { SvgChart } from './SvgChart';
 import { ParentReportModal } from './ParentReportModal';
 import { parseRawKtpText } from '../utils/scheduleParser';
+import { safeStorage } from '../utils/safeStorage';
 import { 
   ArrowLeft, Calendar, Award, CheckCircle2, AlertTriangle, 
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
@@ -28,10 +29,10 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
   const [customProgramName, setCustomProgramName] = useState('');
   const [customProgramText, setCustomProgramText] = useState('');
 
-  // Syllabus templates loaded from localStorage
+  // Syllabus templates loaded from safeStorage
   const presetPrograms = React.useMemo(() => {
     try {
-      const data = localStorage.getItem('tutor_syllabus_programs');
+      const data = safeStorage.getItem('tutor_syllabus_programs');
       if (data) {
         return JSON.parse(data);
       }
