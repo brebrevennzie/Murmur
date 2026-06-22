@@ -1,0 +1,6 @@
+{
+  "name": "Репетитор Прогресс",
+  "description": "Эстетичная панель управления учебным процессом, успеваемостью учеников, результатами пробников, оплатой и расписанием в стиле Notion.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
