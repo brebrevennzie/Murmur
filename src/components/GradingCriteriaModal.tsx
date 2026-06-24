@@ -639,7 +639,7 @@ export const GradingCriteriaModal: React.FC<GradingCriteriaModalProps> = ({ isOp
                         ) : (
                           <>
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="w-6.5 h-6.5 rounded-lg bg-[#C3B4FC]/10 border border-[#C3B4FC]/25 flex items-center justify-center font-semibold text-[#C3B4FC] shrink-0 text-xs sm:text-sm">
+                              <span className="px-2.5 py-1 min-h-[1.75rem] rounded-lg bg-[#C3B4FC]/10 border border-[#C3B4FC]/25 flex items-center justify-center font-semibold text-[#C3B4FC] shrink-0 text-xs">
                                 {range.grade}
                               </span>
                               <span className="text-white/80 font-light truncate leading-normal" title={range.range}>

@@ -12,6 +12,16 @@ import {
   Video, ExternalLink, Link
 } from 'lucide-react';
 
+const getCheckedHomeworkForLesson = (lesson: Lesson, student: Student): string => {
+  if (!student.lessons || student.lessons.length === 0) return '';
+  const pastLessons = student.lessons
+    .filter(p => p.status !== 'cancelled' && p.date < lesson.date)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  
+  const previousLessonWithHw = pastLessons.find(p => p.homework && p.homework.trim());
+  return previousLessonWithHw ? previousLessonWithHw.homework : '';
+};
+
 interface StudentDetailProps {
   student: Student;
   onBack: () => void;
@@ -1363,14 +1373,36 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                               </p>
                             )}
 
+                            {/* Checked Homework (which was assigned in the previous lesson) */}
+                            {(() => {
+                              const checkedHw = getCheckedHomeworkForLesson(lesson, student);
+                              if (checkedHw || (lesson.homeworkStatus && lesson.homeworkStatus !== 'pending')) {
+                                return (
+                                  <p className="text-white/70 pl-2 border-l border-white/10 text-xs">
+                                    <strong className="text-white/40 font-medium">Проверено ДЗ:</strong> {checkedHw || '—'}
+                                    {lesson.homeworkStatus && (
+                                      <span className={`ml-2 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-bold font-mono ${
+                                        lesson.homeworkStatus === 'completed' 
+                                          ? 'bg-green-500/10 text-green-400' 
+                                          : lesson.homeworkStatus === 'partially' 
+                                            ? 'bg-yellow-500/10 text-yellow-400' 
+                                            : lesson.homeworkStatus === 'missed' 
+                                              ? 'bg-rose-500/10 text-rose-400' 
+                                              : 'bg-white/5 text-white/40'
+                                      }`}>
+                                        {lesson.homeworkStatus === 'completed' ? 'Выполнено 👍' : lesson.homeworkStatus === 'partially' ? 'Частично' : lesson.homeworkStatus === 'missed' ? 'Не выполнено ❌' : 'Ожидает'}
+                                      </span>
+                                    )}
+                                  </p>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            {/* Newly Assigned Homework */}
                             {lesson.homework && (
-                              <p className="text-white/70 pl-2 border-l border-[#F4B5CD]/30">
-                                <strong className="text-white/40 font-medium">Домашнее задание:</strong> {lesson.homework}
-                                {lesson.homeworkStatus && (
-                                  <span className="ml-2 text-[9px] uppercase tracking-wider bg-white/5 text-[#F4B5CD] px-1 py-0.5 rounded font-bold font-mono">
-                                    ({lesson.homeworkStatus === 'completed' ? 'Сдано 👍' : lesson.homeworkStatus === 'partially' ? 'Частично' : lesson.homeworkStatus === 'missed' ? 'Не сдано' : 'Ожидает'})
-                                  </span>
-                                )}
+                              <p className="text-white/70 pl-2 border-l border-[#F4B5CD]/30 text-xs">
+                                <strong className="text-[#F4B5CD] font-medium">Задано ДЗ:</strong> {lesson.homework}
                               </p>
                             )}
 
@@ -1882,9 +1914,20 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                                   <strong className="text-white/40 font-medium font-sans">Пройдено:</strong> {lesson.summary}
                                 </p>
                               )}
+                              {(() => {
+                                const checkedHw = getCheckedHomeworkForLesson(lesson, student);
+                                if (checkedHw || (lesson.homeworkStatus && lesson.homeworkStatus !== 'pending')) {
+                                  return (
+                                    <p className="text-white/80 leading-relaxed text-xs border-l border-white/10 pl-2 font-light">
+                                      <strong className="text-white/40 font-medium font-sans">Проверено ДЗ:</strong> {checkedHw || '—'}
+                                    </p>
+                                  );
+                                }
+                                return null;
+                              })()}
                               {lesson.homework && (
                                 <p className="text-white/80 leading-relaxed text-xs border-l border-[#F4B5CD]/50 pl-2 font-light">
-                                  <strong className="text-[#F4B5CD] font-medium font-sans">ДЗ:</strong> {lesson.homework}
+                                  <strong className="text-[#F4B5CD] font-medium font-sans">Задано ДЗ:</strong> {lesson.homework}
                                 </p>
                               )}
                             </div>

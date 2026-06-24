@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
-import { Student } from '../types';
+import { Student, Lesson } from '../types';
 import { X, Calendar, BookOpen, AlertCircle, CheckCircle, Maximize2, Minimize2, Award } from 'lucide-react';
+
+const getCheckedHomeworkForLesson = (lesson: Lesson, student: Student): string => {
+  if (!student.lessons || student.lessons.length === 0) return '';
+  const pastLessons = student.lessons
+    .filter(p => p.status !== 'cancelled' && p.date < lesson.date)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  
+  const previousLessonWithHw = pastLessons.find(p => p.homework && p.homework.trim());
+  return previousLessonWithHw ? previousLessonWithHw.homework : '';
+};
 
 interface ParentReportModalProps {
   student: Student;
@@ -408,13 +418,17 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                               </>
                             )}
                           </div>
-                          {l.homework && (
-                            <p className="text-[10px] leading-tight">
-                              {reportStyle === 'cosmic' && <>Задание: <span className="text-[#ccd3de]/65">{l.homework}</span></>}
-                              {reportStyle === 'classic' && <>Материал задания: <span className="text-stone-600 font-medium">«{l.homework}»</span></>}
-                              {reportStyle === 'patsan' && <>Материал задания: <span className="text-slate-400 font-medium">«{l.homework}»</span></>}
-                            </p>
-                          )}
+                          {(() => {
+                            const missedHw = getCheckedHomeworkForLesson(l, student) || l.homework;
+                            if (!missedHw) return null;
+                            return (
+                              <p className="text-[10px] leading-tight">
+                                {reportStyle === 'cosmic' && <>Задание: <span className="text-[#ccd3de]/65">{missedHw}</span></>}
+                                {reportStyle === 'classic' && <>Материал задания: <span className="text-stone-600 font-medium">«{missedHw}»</span></>}
+                                {reportStyle === 'patsan' && <>Материал задания: <span className="text-slate-400 font-medium">«{missedHw}»</span></>}
+                              </p>
+                            );
+                          })()}
                           <p className="text-[11px] leading-normal">
                             {reportStyle === 'cosmic' && (
                               <>
