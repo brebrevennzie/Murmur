@@ -109,6 +109,11 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     isOneTime: boolean;
   } | null>(null);
 
+  const [dragOverInfo, setDragOverInfo] = useState<{
+    day: string;
+    time: string;
+  } | null>(null);
+
   // Modal confirm state
   const [dropConfirmState, setDropConfirmState] = useState<{
     studentId: string;
@@ -186,6 +191,25 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
 
   const formatSlot = (day: string, time: string, duration: number) => {
     return `${day} ${time} (${duration} мин)`;
+  };
+
+  const getWeekdayDateInSameWeek = (lessonDateStr: string, targetRuWeekday: string): string => {
+    const ruDays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const targetDayIndex = ruDays.indexOf(targetRuWeekday);
+    if (targetDayIndex === -1) return '';
+    
+    const lessonDate = new Date(lessonDateStr);
+    const lessonDayIndex = lessonDate.getDay(); // 0-6
+    
+    // Calculate difference in days
+    const diff = targetDayIndex - lessonDayIndex;
+    const targetDate = new Date(lessonDate);
+    targetDate.setDate(lessonDate.getDate() + diff);
+    
+    const yyyy = targetDate.getFullYear();
+    const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(targetDate.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   };
 
   const parseTimeToFloat = (timeStr: string): number => {
@@ -388,7 +412,12 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         if (parsed.day === day) {
           // Verify if rescheduled away for today's date
           const isRescheduledAway = s.oneTimeReschedules?.some(
-            r => r.date === todayDateStr && parseSlot(r.originalSlot).time === parsed.time && parseSlot(r.originalSlot).day === parsed.day
+            r => {
+              if (!r.originalSlot) return false;
+              const origParsed = parseSlot(r.originalSlot);
+              const origDate = getWeekdayDateInSameWeek(r.date, origParsed.day);
+              return origDate === todayDateStr && origParsed.time === parsed.time;
+            }
           );
 
           if (!isRescheduledAway) {
@@ -958,8 +987,41 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOverForDay = (e: React.DragEvent, day: string) => {
     e.preventDefault();
+    if (!draggedSlotInfo) return;
+
+    // Calculate mouse coordinates relative to the day grid column
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    const offsetPercentage = relativeY / rect.height;
+
+    // Map 0-1 percentage to 14 hour range (8:00 to 22:00)
+    const hourFloat = 8 + offsetPercentage * 14;
+
+    // Round to nearest 30 mins
+    const totalMinutes = Math.round((hourFloat * 60) / 30) * 30;
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+
+    // Keep times in range 08:00 to 21:30 (ending by 22:00)
+    const finalH = Math.min(Math.max(h, 8), 21);
+    const finalM = finalH === 21 ? 0 : m;
+
+    const newTimeStr = `${String(finalH).padStart(2, '0')}:${String(finalM).padStart(2, '0')}`;
+
+    if (!dragOverInfo || dragOverInfo.day !== day || dragOverInfo.time !== newTimeStr) {
+      setDragOverInfo({ day, time: newTimeStr });
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverInfo(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedSlotInfo(null);
+    setDragOverInfo(null);
   };
 
   const handleDrop = (e: React.DragEvent, targetDay: string, targetDateStr: string) => {
@@ -1004,6 +1066,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     });
 
     setDraggedSlotInfo(null);
+    setDragOverInfo(null);
   };
 
   const handleSaveReschedule = (
@@ -1284,7 +1347,8 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
 
                       {/* Day Body Column Container - Drop Zone */}
                       <div
-                        onDragOver={handleDragOver}
+                        onDragOver={(e) => handleDragOverForDay(e, day)}
+                        onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, day, dateStr)}
                         onClick={(e) => {
                           // Prevent clicks originating from lesson overlays inside this container
@@ -1325,6 +1389,30 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                         title="Кликните на свободное время для быстрой записи!"
                         style={{ height: `${14 * 45}px` }} // 14 intervals * 45px = 630px
                       >
+                        {/* Drag over preview slot highlight */}
+                        {dragOverInfo && dragOverInfo.day === day && (() => {
+                          const dragDuration = draggedSlotInfo ? parseSlot(draggedSlotInfo.slotStr).duration : 60;
+                          const startHourFloat = parseTimeToFloat(dragOverInfo.time);
+                          const offsetHours = Math.max(0, startHourFloat - 8);
+                          const topPercent = Math.min(95, (offsetHours / 14) * 100);
+                          
+                          const durationHours = dragDuration / 60;
+                          const heightPercent = (durationHours / 14) * 100;
+                          
+                          return (
+                            <div 
+                              className="absolute left-1.5 right-1.5 border-2 border-dashed border-[#F4B5CD]/60 bg-[#F4B5CD]/10 text-[#F4B5CD] text-[10px] font-semibold p-1.5 rounded-xl flex flex-col items-center justify-center animate-pulse pointer-events-none z-10 shadow-lg"
+                              style={{
+                                top: `${topPercent}%`,
+                                height: `${heightPercent}%`,
+                              }}
+                            >
+                              <span className="font-serif leading-none">Слот: {dragOverInfo.time}</span>
+                              <span className="text-[8px] opacity-75">({dragDuration} мин)</span>
+                            </div>
+                          );
+                        })()}
+
                         {/* Background Hour Lines */}
                         {Array.from({ length: 14 }).map((_, i) => (
                           <div
@@ -1353,6 +1441,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                               key={les.id + '-' + idx}
                               draggable="true"
                               onDragStart={(e) => handleDragStart(e, les.id, les.fullSlot, les.isOneTime)}
+                              onDragEnd={handleDragEnd}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setActiveAction({

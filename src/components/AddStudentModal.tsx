@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Student } from '../types';
+import { Student, COVER_PRESETS } from '../types';
 import { X, UserPlus, Sparkles } from 'lucide-react';
 
 interface AddStudentModalProps {
@@ -7,26 +7,14 @@ interface AddStudentModalProps {
   onAdd: (student: Student) => void;
 }
 
-const COVER_PRESETS = [
-  { name: 'Нежная сакура', value: 'linear-gradient(135deg, rgba(244, 181, 205, 0.12) 0%, rgba(254, 219, 231, 0.08) 100%)' },
-  { name: 'Лиловый закат', value: 'linear-gradient(135deg, rgba(216, 180, 254, 0.12) 0%, rgba(244, 181, 205, 0.08) 100%)' },
-  { name: 'Пепел розы (пыльный)', value: 'linear-gradient(135deg, rgba(212, 178, 182, 0.16) 0%, rgba(195, 180, 252, 0.08) 100%)' },
-  { name: 'Пыльный зефир', value: 'linear-gradient(135deg, rgba(232, 197, 200, 0.15) 0%, rgba(222, 165, 169, 0.07) 100%)' },
-  { name: 'Розовая дымка', value: 'linear-gradient(135deg, rgba(244, 194, 208, 0.18) 0%, rgba(212, 178, 182, 0.08) 100%)' },
-  { name: 'Муссовый рассвет', value: 'linear-gradient(135deg, rgba(222, 165, 169, 0.14) 0%, rgba(195, 180, 252, 0.05) 100%)' },
-  { name: 'Мятная роса', value: 'linear-gradient(135deg, rgba(167, 243, 208, 0.12) 0%, rgba(209, 250, 229, 0.08) 100%)' },
-  { name: 'Коралловая пудра', value: 'linear-gradient(135deg, rgba(251, 146, 146, 0.1) 0%, rgba(244, 181, 205, 0.08) 100%)' },
-  { name: 'Лавандовый сон', value: 'linear-gradient(135deg, rgba(216, 180, 254, 0.12) 0%, rgba(244, 181, 205, 0.08) 100%)' },
-];
-
 const EMOJI_PRESETS = ['💖', '❤️', '💝', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💕', '💞', '💓', '💗', '💘', '💟', '❣️', '🌸', '🌹', '🌺', '🌻', '🌼', '🌷', '🐱', '🐰', '🦊', '🐻', '🐼'];
 
 export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd }) => {
   const [name, setName] = useState('');
-  const [subject, setSubject] = useState('Математика');
+  const [subject, setSubject] = useState('Русский язык');
   const [gradeClass, setGradeClass] = useState('11 класс');
   const [goal, setGoal] = useState('');
-  const [balanceLessons, setBalanceLessons] = useState('4');
+  const [balanceLessons, setBalanceLessons] = useState('0');
   const [hourlyRate, setHourlyRate] = useState('1500');
   const [scheduleText, setScheduleText] = useState('Пн 17:00, Чт 17:00');
   const [selectedCover, setSelectedCover] = useState(COVER_PRESETS[0].value);
@@ -132,14 +120,17 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
             {/* Subject */}
             <div>
               <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40 mb-1">Предмет репетитора</label>
-              <input 
-                type="text" 
+              <select
                 required
-                placeholder="Математика (Профиль)"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-white/5 bg-white/5 text-white placeholder-white/20 focus:border-[#8EA4C9] focus:outline-none rounded-xl"
-              />
+                className="w-full text-xs px-3 py-2 border border-white/5 bg-[#181920] text-white focus:border-[#8EA4C9] focus:outline-none rounded-xl cursor-pointer"
+              >
+                <option value="Русский язык">Русский язык</option>
+                <option value="Литература">Литература</option>
+                <option value="Испанский язык">Испанский язык</option>
+                <option value="Английский язык">Английский язык</option>
+              </select>
             </div>
 
             {/* Class info */}

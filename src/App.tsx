@@ -15,13 +15,26 @@ import {
   Plus, GraduationCap, Grid, SlidersHorizontal, 
   HelpCircle, RefreshCw, AlertCircle, BookOpen, Layers,
   Calendar, FileText, Cloud, CloudOff, Award, ClipboardList,
-  ChevronLeft, ChevronRight, X, Trash2
+  ChevronLeft, ChevronRight, X, Trash2, ArrowUp
 } from 'lucide-react';
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 
 export default function App() {
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 300) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
   
   // Quick Notes state
   const [quickNotes, setQuickNotes] = useState<string>(() => localStorage.getItem('quick_notes') || '');
@@ -1225,6 +1238,17 @@ export default function App() {
             <X className="w-4 h-4" />
           </button>
         </div>
+      )}
+
+      {showScrollTop && !selectedStudentId && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 left-6 z-40 bg-[#12131a]/30 hover:bg-[#12131a]/85 border border-white/5 hover:border-[#F4B5CD]/30 text-white/50 hover:text-[#F4B5CD] p-3 rounded-xl transition-all duration-300 backdrop-blur-md cursor-pointer flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 group"
+          title="Наверх"
+        >
+          <ArrowUp className="w-4 h-4 transition-transform duration-300 group-hover:-translate-y-0.5" />
+        </button>
       )}
     </div>
   );

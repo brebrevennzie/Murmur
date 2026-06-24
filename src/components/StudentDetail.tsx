@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Student, MockExam, Lesson, Payment, TopicGap } from '../types';
+import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS } from '../types';
 import { SvgChart } from './SvgChart';
 import { ParentReportModal } from './ParentReportModal';
 import { PaymentReportModal } from './PaymentReportModal';
@@ -9,7 +9,7 @@ import {
   ArrowLeft, Calendar, Award, CheckCircle2, AlertTriangle, 
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
   HelpCircle, PenTool, ClipboardList, TrendingUp, AlertCircle,
-  Video, ExternalLink, Link
+  Video, ExternalLink, Link, X, Trash, Maximize2, Minimize2
 } from 'lucide-react';
 
 const getCheckedHomeworkForLesson = (lesson: Lesson, student: Student): string => {
@@ -129,10 +129,17 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
     notes: '',
     ktpStatus: 'according' as Lesson['ktpStatus'],
     isPaid: false,
-    studentQuestions: ''
+    studentQuestions: '',
+    spanishWords: ''
   });
 
   const [showAddPayment, setShowAddPayment] = useState(false);
+  const [showVocabModal, setShowVocabModal] = useState(false);
+  const [isVocabMaximized, setIsVocabMaximized] = useState(false);
+  const [showQuickVocab, setShowQuickVocab] = useState(false);
+  const [quickVocabWords, setQuickVocabWords] = useState<string[]>([]);
+  const [tempQuickWord, setTempQuickWord] = useState('');
+  const [newVocabWord, setNewVocabWord] = useState('');
   const [newPayment, setNewPayment] = useState({
     date: new Date().toISOString().split('T')[0],
     amount: '',
@@ -302,10 +309,20 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
       balanceModify = -1;
     }
 
+    let updatedVocab = student.vocab ? [...student.vocab] : [];
+    if (student.subject === 'Испанский язык' && newLesson.spanishWords) {
+      const words = newLesson.spanishWords
+        .split(',')
+        .map(w => w.trim())
+        .filter(Boolean);
+      updatedVocab = [...updatedVocab, ...words];
+    }
+
     onUpdateStudent({
       ...student,
       lessons: [lesson, ...student.lessons],
-      balanceLessons: student.balanceLessons + balanceModify
+      balanceLessons: student.balanceLessons + balanceModify,
+      vocab: updatedVocab
     });
 
     // Reset form
@@ -321,7 +338,8 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
       notes: '',
       ktpStatus: 'according',
       isPaid: false,
-      studentQuestions: ''
+      studentQuestions: '',
+      spanishWords: ''
     });
     setShowAddLesson(false);
   };
@@ -499,7 +517,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 active:bg-[#F4B5CD]/30 backdrop-blur-xl border border-[#F4B5CD]/30 text-[10px] uppercase tracking-widest font-extrabold text-[#F4B5CD] transition-all duration-300 rounded-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] cursor-pointer"
           >
             <FileText className="w-3.5 h-3.5" />
-            Отчет об оплате 🧾
+            Долги 🧾
           </button>
 
           <button 
@@ -507,7 +525,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white/[0.04] hover:bg-white/[0.12] active:bg-white/[0.18] backdrop-blur-xl border border-white/10 text-[10px] uppercase tracking-widest font-extrabold text-[#F4B5CD] transition-all duration-300 rounded-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] hover:shadow-[#F4B5CD]/10 cursor-pointer"
           >
             <TrendingUp className="w-3.5 h-3.5 text-[#F4B5CD]" />
-            Общая статистика для родителей 📊
+            Отчет родителям 📊
           </button>
         </div>
       </div>
@@ -532,9 +550,19 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                   <PenTool className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <p className="text-xs uppercase tracking-widest font-bold text-[#F4B5CD] mt-1.5">
-                {student.gradeClass} • {student.subject}
-              </p>
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                <p className="text-xs uppercase tracking-widest font-bold text-[#F4B5CD]">
+                  {student.gradeClass} • {student.subject}
+                </p>
+                {student.subject === 'Испанский язык' && (
+                  <button 
+                    onClick={() => setShowVocabModal(true)}
+                    className="px-2.5 py-1 text-[9px] uppercase tracking-wider font-extrabold text-[#F4B5CD] hover:text-white bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 rounded-lg transition inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    🇪🇸 Словарик
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -658,16 +686,20 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
               </div>
               <div>
                 <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Предмет</label>
-                <input 
-                  type="text" 
+                <select 
                   value={profileForm.subject}
                   onChange={(e) => {
                     const val = e.target.value;
                     setProfileForm(p => ({ ...p, subject: val }));
                     onUpdateStudent({ ...student, subject: val });
                   }}
-                  className="w-full px-3 py-2 border border-white/5 bg-white/5 text-xs text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
-                />
+                  className="w-full px-3 py-2 border border-white/5 bg-[#181920] text-xs text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl cursor-pointer"
+                >
+                  <option value="Русский язык">Русский язык</option>
+                  <option value="Литература">Литература</option>
+                  <option value="Испанский язык">Испанский язык</option>
+                  <option value="Английский язык">Английский язык</option>
+                </select>
               </div>
               <div>
                 <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Возраст / Класс</label>
@@ -715,6 +747,31 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                   className="w-full px-3 py-2 border border-white/5 bg-white/5 text-xs text-white focus:border-[#F4B5CD] focus:outline-none font-mono rounded-xl"
                 />
               </div>
+
+              {/* 20 Pastel Cover Presets selection */}
+              <div className="md:col-span-2 space-y-3 pt-3 border-t border-white/5">
+                <label className="block text-[9px] uppercase tracking-widest font-extrabold text-[#F4B5CD]">
+                  🎨 Обложка личного кабинета (20 пастельных градиентов без желтого и голубого)
+                </label>
+                <div className="grid grid-cols-5 sm:grid-cols-10 gap-2.5">
+                  {COVER_PRESETS.map((preset) => (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => onUpdateStudent({ ...student, coverColor: preset.value })}
+                      className={`h-9 relative transition duration-300 rounded-xl overflow-hidden hover:scale-105 active:scale-95 ${
+                        student.coverColor === preset.value 
+                          ? 'ring-2 ring-[#F4B5CD] ring-offset-[#12131a] ring-offset-2 scale-102' 
+                          : 'opacity-85 hover:opacity-100 border border-white/5 hover:border-white/25'
+                      }`}
+                      style={{ background: preset.value, backgroundSize: 'cover' }}
+                      title={preset.name}
+                    >
+                      <span className="sr-only">{preset.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="flex gap-2 justify-end mt-4 pt-4 border-t border-white/5">
               <button 
@@ -745,18 +802,14 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
           {/* Quick Attendance overview */}
           <div className="bg-gradient-to-br from-[#F4B5CD]/[0.06] via-white/[0.02] to-white/[0.01] backdrop-blur-xl p-5 border border-white/10 rounded-2xl shadow-xl">
             <h4 className="text-[9px] text-white/40 font-bold uppercase tracking-widest mb-1">Посещаемость и Пропуски</h4>
-            <div className="grid grid-cols-3 gap-1.5 text-center mt-2.5">
-              <div className="bg-lavender/10 rounded p-2 border border-lavender/25">
-                <span className="text-base font-mono font-bold text-lavender block">{totalLessonsCount}</span>
+            <div className="grid grid-cols-2 gap-1.5 text-center mt-2.5">
+              <div className="bg-[#8EA4C9]/10 rounded p-2 border border-[#8EA4C9]/25">
+                <span className="text-base font-mono font-bold text-white/90 block">{totalLessonsCount}</span>
                 <span className="text-[8px] uppercase tracking-wider text-white/40 font-medium">Уроков</span>
               </div>
               <div className="bg-white/5 rounded p-2 border border-white/10">
-                <span className="text-base font-mono font-bold text-white/80 block">{missedExcused}</span>
-                <span className="text-[8px] uppercase tracking-wider text-white/40 font-medium">Уваж.</span>
-              </div>
-              <div className="bg-rose-950/20 rounded p-2 border border-rose-900/40">
-                <span className="text-base font-mono font-bold text-rose-400 block">{missedUnexcused}</span>
-                <span className="text-[8px] uppercase tracking-wider text-white/40 font-medium">Прогулы</span>
+                <span className="text-base font-mono font-bold text-[#F4B5CD] block">{missedExcused + missedUnexcused}</span>
+                <span className="text-[8px] uppercase tracking-wider text-white/40 font-medium">Пропуски</span>
               </div>
             </div>
           </div>
@@ -1832,6 +1885,24 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                         />
                       </div>
                     </div>
+
+                    {student.subject === 'Испанский язык' && (
+                      <div className="animate-fadeIn mt-3 bg-[#F4B5CD]/[0.02] border border-[#F4B5CD]/10 p-4 rounded-xl">
+                        <label className="block text-[9px] uppercase tracking-widest font-extrabold text-[#F4B5CD] mb-1 font-sans">
+                          🇪🇸 Испанский словарик за урок (новые слова или ошибки через запятую)
+                        </label>
+                        <input 
+                          type="text"
+                          placeholder="la mesa - стол, cantar - петь, el coche - машина..."
+                          value={newLesson.spanishWords || ''}
+                          onChange={(e) => setNewLesson({ ...newLesson, spanishWords: e.target.value })}
+                          className="w-full text-xs px-3 py-2.5 border border-[#F4B5CD]/20 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl font-mono placeholder-white/20"
+                        />
+                        <p className="text-[9px] text-white/40 mt-1">
+                          Слова будут автоматически сохранены в глобальный список «Словарик» после добавления урока.
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -2345,6 +2416,128 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
         />
       )}
 
+      {showVocabModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn" onClick={() => setShowVocabModal(false)}>
+          <div 
+            className={`bg-[#12131a] w-full border border-white/10 shadow-2xl transition-all duration-300 flex flex-col ${
+              isVocabMaximized 
+                ? 'max-w-6xl h-[92vh]' 
+                : 'max-w-2xl h-[75vh] md:h-auto max-h-[85vh]'
+            } rounded-2xl overflow-hidden text-left p-6 space-y-4 animate-slideUp`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl select-none">🇪🇸</span>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white font-serif uppercase tracking-wider flex items-center gap-2">
+                    Словарик ученика
+                    <span className="text-[10px] lowercase font-normal px-2 py-0.5 bg-[#F4B5CD]/10 text-[#F4B5CD] rounded-full border border-[#F4B5CD]/20">
+                      {student.vocab ? student.vocab.length : 0} слов
+                    </span>
+                  </h3>
+                  <p className="text-[10px] text-white/50">{student.name} • Испанский язык</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button 
+                  type="button"
+                  onClick={() => setIsVocabMaximized(!isVocabMaximized)}
+                  className="p-1.5 hover:bg-white/5 text-white/40 hover:text-white transition rounded-lg"
+                  title={isVocabMaximized ? "Свернуть" : "Развернуть на весь экран"}
+                >
+                  {isVocabMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowVocabModal(false)}
+                  className="p-1.5 hover:bg-white/5 text-white/40 hover:text-white transition rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Vocabulary list (bulleted scrollable list) */}
+            <div className="flex-1 min-h-0 flex flex-col space-y-2">
+              <span className="text-[9px] uppercase tracking-widest font-bold text-white/40">Сохраненные слова и выражения</span>
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1 border border-white/5 bg-black/25 rounded-xl p-4 scrollbar-thin scrollbar-thumb-white/10">
+                {!student.vocab || student.vocab.length === 0 ? (
+                  <p className="text-xs text-white/30 text-center py-12 italic">Словарик пока пуст. Запишите слова на уроке или добавьте ниже.</p>
+                ) : (
+                  <div className={`grid gap-2 ${isVocabMaximized ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+                    {student.vocab.map((word, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-2.5 px-3 border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] rounded-xl group transition-all duration-200">
+                        <span className="font-mono text-xs text-white/95 break-all leading-relaxed pr-2 flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#F4B5CD]/60 flex-shrink-0" />
+                          {word}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newVoc = student.vocab ? student.vocab.filter((_, i) => i !== idx) : [];
+                            onUpdateStudent({
+                              ...student,
+                              vocab: newVoc
+                            });
+                          }}
+                          className="p-1.5 text-white/35 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          title="Удалить слово"
+                        >
+                          <Trash className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Add new word input directly inside vocab */}
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newVocabWord.trim()) return;
+                const newVoc = student.vocab ? [...student.vocab, newVocabWord.trim()] : [newVocabWord.trim()];
+                onUpdateStudent({
+                  ...student,
+                  vocab: newVoc
+                });
+                setNewVocabWord('');
+              }}
+              className="space-y-1.5 pt-2"
+            >
+              <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40">Добавить новое слово напрямую</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  placeholder="слово или фраза, например: el sol - солнце..."
+                  value={newVocabWord}
+                  onChange={(e) => setNewVocabWord(e.target.value)}
+                  className="flex-1 text-xs px-3 py-2.5 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl font-sans placeholder-white/20"
+                />
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-[#F4B5CD] text-black text-[10px] tracking-widest uppercase font-extrabold rounded-xl hover:bg-[#E29FB6] transition duration-200 cursor-pointer flex-shrink-0"
+                >
+                  Добавить
+                </button>
+              </div>
+            </form>
+
+            <div className="pt-3 border-t border-white/5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowVocabModal(false)}
+                className="px-5 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/75 text-[10px] tracking-widest uppercase font-bold rounded-xl transition cursor-pointer"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {customConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
           <div className="bg-[#12131a] w-full max-w-sm border border-white/10 shadow-2xl rounded-2xl overflow-hidden text-left p-6 space-y-4">
@@ -2372,6 +2565,142 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             </div>
           </div>
         </div>
+      )}
+
+      {/* Spanish Quick Vocab Scratchpad Button & Widget */}
+      {student.subject === 'Испанский язык' && (
+        <>
+          {!showQuickVocab ? (
+            <button
+              onClick={() => setShowQuickVocab(true)}
+              className="fixed bottom-6 right-6 z-40 bg-[#12131a]/95 hover:bg-[#1E212D] border border-[#F4B5CD]/30 hover:border-[#F4B5CD]/70 text-white px-4 py-3 rounded-2xl flex items-center gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)] transition-all duration-300 hover:scale-102 cursor-pointer group animate-fadeIn"
+              title="Открыть быстрый блокнот для записи слов во время урока"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#F4B5CD] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#F4B5CD]"></span>
+              </span>
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-white/90 font-sans">
+                Запись слов на уроке
+              </span>
+              {quickVocabWords.length > 0 && (
+                <span className="px-2 py-0.5 text-[9px] font-extrabold bg-[#F4B5CD] text-black rounded-lg transition-transform duration-200 group-hover:scale-110">
+                  {quickVocabWords.length}
+                </span>
+              )}
+            </button>
+          ) : (
+            <div 
+              className="fixed bottom-6 right-6 z-40 w-80 md:w-96 bg-[#12131a] border border-[#F4B5CD]/30 shadow-[0_20px_50px_rgba(0,0,0,0.6)] rounded-2xl p-5 space-y-4 animate-slideUp flex flex-col max-h-[500px]"
+            >
+              {/* Widget Header */}
+              <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl select-none">🇪🇸</span>
+                  <div>
+                    <h4 className="text-xs font-extrabold text-white uppercase tracking-wider font-sans">Словник урока</h4>
+                    <p className="text-[9px] text-[#F4B5CD] font-medium">Быстрая запись на занятии</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQuickVocab(false)}
+                  className="p-1 hover:bg-white/5 text-white/40 hover:text-white transition rounded-lg"
+                  title="Свернуть"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Quick Word Buffer List */}
+              <div className="flex-1 min-h-[140px] max-h-48 overflow-y-auto pr-1 border border-white/5 bg-black/25 rounded-xl p-3 scrollbar-thin scrollbar-thumb-white/10 space-y-2">
+                {quickVocabWords.length === 0 ? (
+                  <div className="text-center py-8 text-white/30 italic text-xs space-y-1">
+                    <p>Тут пока пусто.</p>
+                    <p className="text-[9px] opacity-70">Пишите новые слова ниже во время урока!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {quickVocabWords.map((word, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-1.5 px-2.5 bg-white/[0.02] border border-white/[0.03] rounded-lg group text-xs text-white/90 font-mono">
+                        <span className="truncate pr-2">{word}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQuickVocabWords(prev => prev.filter((_, i) => i !== idx))}
+                          className="p-1 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded-md transition duration-150"
+                        >
+                          <Trash className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Input for Quick Addition */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!tempQuickWord.trim()) return;
+                  setQuickVocabWords(prev => [...prev, tempQuickWord.trim()]);
+                  setTempQuickWord('');
+                }}
+                className="space-y-1"
+              >
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="mesa - стол, escribir - писать..."
+                    value={tempQuickWord}
+                    onChange={(e) => setTempQuickWord(e.target.value)}
+                    className="flex-1 text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl placeholder-white/20 font-sans"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 bg-[#F4B5CD] hover:bg-[#E29FB6] text-black font-extrabold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+                <p className="text-[8px] text-white/35">
+                  Нажмите Enter для быстрого добавления в буфер занятия
+                </p>
+              </form>
+
+              {/* Transfer Actions */}
+              {quickVocabWords.length > 0 && (
+                <div className="pt-2 border-t border-white/5 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentVoc = student.vocab || [];
+                      const updatedVoc = [...currentVoc, ...quickVocabWords];
+                      onUpdateStudent({
+                        ...student,
+                        vocab: updatedVoc
+                      });
+                      setQuickVocabWords([]);
+                    }}
+                    className="w-full py-2.5 bg-[#F4B5CD] hover:bg-[#E29FB6] text-black text-[10px] tracking-widest uppercase font-extrabold rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    ✨ Перенести все ({quickVocabWords.length}) в словарик
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("Очистить буфер урока?")) {
+                        setQuickVocabWords([]);
+                      }
+                    }}
+                    className="w-full py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white text-[9px] tracking-wider uppercase font-bold rounded-lg transition cursor-pointer"
+                  >
+                    Очистить буфер
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
