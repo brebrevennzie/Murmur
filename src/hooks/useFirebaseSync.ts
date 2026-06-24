@@ -88,30 +88,69 @@ export function useFirebaseSync(
         const localLastUpdatedStr = safeStorage.getItem('tutor_db_last_updated');
         const localLastUpdated = localLastUpdatedStr ? new Date(localLastUpdatedStr).getTime() : 0;
         
-        // Safety check 1: if local data contains real students but cloud contains only demo students,
-        // we should push local to cloud rather than downloading demo data.
-        if (!isLocalDefault && isDbDefault) {
-          hasInitialLoadCompleted.current = true;
-          pushLocalToCloud(user.uid, localStudents, programsRef.current);
-          
-          if (data.programs) {
-            const dbProgramsStr = JSON.stringify(data.programs);
-            const localProgramsStr = JSON.stringify(programsRef.current);
-            lastCloudProgramsRef.current = dbProgramsStr;
-            if (dbProgramsStr !== localProgramsStr) {
-              setSyllabusPrograms(data.programs);
-              safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
+        if (!hasInitialLoadCompleted.current) {
+          // ================= INITIAL LOAD SYNC DECISION =================
+          // Safety check 1: if local data contains real students but cloud contains only demo students,
+          // we should push local to cloud rather than downloading demo data.
+          if (!isLocalDefault && isDbDefault) {
+            hasInitialLoadCompleted.current = true;
+            pushLocalToCloud(user.uid, localStudents, programsRef.current);
+            
+            if (data.programs) {
+              const dbProgramsStr = JSON.stringify(data.programs);
+              const localProgramsStr = JSON.stringify(programsRef.current);
+              lastCloudProgramsRef.current = dbProgramsStr;
+              if (dbProgramsStr !== localProgramsStr) {
+                setSyllabusPrograms(data.programs);
+                safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
+              }
             }
+          } 
+          // Safety check 2: if local data is not default and has been updated more recently than the cloud,
+          // push the local data to cloud.
+          else if (!isLocalDefault && localLastUpdated > cloudLastUpdated) {
+            hasInitialLoadCompleted.current = true;
+            pushLocalToCloud(user.uid, localStudents, programsRef.current);
+          } 
+          // Default sync behavior: Cloud is newer or same, or local is default: download cloud data
+          else {
+            if (data.students) {
+              const dbStudentsStr = JSON.stringify(dbStudents);
+              const localStudentsStr = JSON.stringify(localStudents);
+              
+              lastCloudStudentsRef.current = dbStudentsStr;
+              
+              if (dbStudentsStr !== localStudentsStr) {
+                setStudents(dbStudents);
+                // Also store locally for offline backup
+                safeStorage.setItem('tutor_students_db', dbStudentsStr);
+              }
+            }
+            
+            if (data.programs) {
+              const dbProgramsStr = JSON.stringify(data.programs);
+              const localProgramsStr = JSON.stringify(programsRef.current);
+              
+              lastCloudProgramsRef.current = dbProgramsStr;
+              
+              if (dbProgramsStr !== localProgramsStr) {
+                setSyllabusPrograms(data.programs);
+                safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
+              }
+            }
+
+            // Align the local timestamp with the cloud timestamp
+            if (data.lastUpdated) {
+              safeStorage.setItem('tutor_db_last_updated', data.lastUpdated);
+            }
+            
+            hasInitialLoadCompleted.current = true;
+            setSyncStatus('saved');
           }
-        } 
-        // Safety check 2: if local data is not default and has been updated more recently than the cloud,
-        // push the local data to cloud.
-        else if (!isLocalDefault && localLastUpdated > cloudLastUpdated) {
-          hasInitialLoadCompleted.current = true;
-          pushLocalToCloud(user.uid, localStudents, programsRef.current);
-        } 
-        // Default sync behavior: Cloud is newer or same, or local is default: download cloud data
-        else {
+        } else {
+          // ================= REAL-TIME UPDATES (AFTER INITIAL LOAD) =================
+          // Once the initial sync decision is made, we ALWAYS pull down cloud changes.
+          // We never push back from here, which entirely prevents clock skew overwrite loops!
           if (data.students) {
             const dbStudentsStr = JSON.stringify(dbStudents);
             const localStudentsStr = JSON.stringify(localStudents);
@@ -120,7 +159,6 @@ export function useFirebaseSync(
             
             if (dbStudentsStr !== localStudentsStr) {
               setStudents(dbStudents);
-              // Also store locally for offline backup
               safeStorage.setItem('tutor_students_db', dbStudentsStr);
             }
           }
@@ -137,12 +175,10 @@ export function useFirebaseSync(
             }
           }
 
-          // Align the local timestamp with the cloud timestamp
           if (data.lastUpdated) {
             safeStorage.setItem('tutor_db_last_updated', data.lastUpdated);
           }
           
-          hasInitialLoadCompleted.current = true;
           setSyncStatus('saved');
         }
       } else {
