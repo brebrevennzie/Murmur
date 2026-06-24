@@ -20,7 +20,7 @@ import {
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 
 export default function App() {
-  const [students, setStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   
   // Quick Notes state
@@ -94,7 +94,7 @@ export default function App() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showGradingModal, setShowGradingModal] = useState(false);
 
-  const [syllabusPrograms, setSyllabusPrograms] = useState<SyllabusProgram[]>([]);
+  const [syllabusPrograms, setSyllabusPrograms] = useState<SyllabusProgram[]>(() => getInitialPrograms());
   const [showProgramManager, setShowProgramManager] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isReminderDismissed, setIsReminderDismissed] = useState(false);
@@ -116,18 +116,21 @@ export default function App() {
     handleGoogleSignIn,
     handleSignOut,
     isConnectionBlocked,
+    reconnectSync,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
 
-  // Load students and programs on start
-  useEffect(() => {
-    setStudents(syncAllStudents(getInitialStudents()));
-    setSyllabusPrograms(getInitialPrograms());
-  }, []);
+  const updateTimestamp = () => {
+    const timestamp = new Date().toISOString();
+    safeStorage.setItem('tutor_db_last_updated', timestamp);
+    if (user) {
+      safeStorage.setItem(`tutor_db_last_updated_${user.uid}`, timestamp);
+    }
+  };
 
   const handleSaveSyllabusPrograms = (updated: SyllabusProgram[]) => {
     setSyllabusPrograms(updated);
     savePrograms(updated);
-    safeStorage.setItem('tutor_db_last_updated', new Date().toISOString());
+    updateTimestamp();
   };
 
   // Save students on change
@@ -135,7 +138,7 @@ export default function App() {
     const synced = syncAllStudents(updatedStudents);
     setStudents(synced);
     saveStudents(synced);
-    safeStorage.setItem('tutor_db_last_updated', new Date().toISOString());
+    updateTimestamp();
   };
 
   const handleRestoreBackup = (restoredStudents: Student[], restoredPrograms: SyllabusProgram[]) => {
@@ -143,7 +146,7 @@ export default function App() {
     if (restoredPrograms && restoredPrograms.length > 0) {
       handleSaveSyllabusPrograms(restoredPrograms);
     }
-    safeStorage.setItem('tutor_db_last_updated', new Date().toISOString());
+    updateTimestamp();
   };
 
   // Add individual student
@@ -865,6 +868,7 @@ export default function App() {
           students={students}
           syllabusPrograms={syllabusPrograms}
           onRestoreBackup={handleRestoreBackup}
+          onReconnect={reconnectSync}
         />
       )}
 

@@ -17,6 +17,7 @@ interface FirebaseSyncModalProps {
   students: Student[];
   syllabusPrograms: SyllabusProgram[];
   onRestoreBackup: (students: Student[], programs: SyllabusProgram[]) => void;
+  onReconnect?: () => void;
 }
 
 export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
@@ -33,6 +34,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   students,
   syllabusPrograms,
   onRestoreBackup,
+  onReconnect,
 }) => {
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [email, setEmail] = useState('');
@@ -267,7 +269,20 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
               <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-mono tracking-wider uppercase text-white/40">Статус сети:</span>
-                  {getStatusBadge()}
+                  <div className="flex items-center gap-1.5">
+                    {onReconnect && (
+                      <button
+                        type="button"
+                        onClick={onReconnect}
+                        className="px-1.5 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-[9px] font-mono text-[#F4B5CD] hover:text-white transition flex items-center gap-1 cursor-pointer"
+                        title="Переподключить облако (полезно при переключении VPN/прокси)"
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" />
+                        обновить
+                      </button>
+                    )}
+                    {getStatusBadge()}
+                  </div>
                 </div>
 
                 <div className="space-y-1">
