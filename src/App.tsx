@@ -127,6 +127,7 @@ export default function App() {
   const handleSaveSyllabusPrograms = (updated: SyllabusProgram[]) => {
     setSyllabusPrograms(updated);
     savePrograms(updated);
+    safeStorage.setItem('tutor_db_last_updated', new Date().toISOString());
   };
 
   // Save students on change
@@ -134,6 +135,7 @@ export default function App() {
     const synced = syncAllStudents(updatedStudents);
     setStudents(synced);
     saveStudents(synced);
+    safeStorage.setItem('tutor_db_last_updated', new Date().toISOString());
   };
 
   const handleRestoreBackup = (restoredStudents: Student[], restoredPrograms: SyllabusProgram[]) => {
@@ -141,6 +143,7 @@ export default function App() {
     if (restoredPrograms && restoredPrograms.length > 0) {
       handleSaveSyllabusPrograms(restoredPrograms);
     }
+    safeStorage.setItem('tutor_db_last_updated', new Date().toISOString());
   };
 
   // Add individual student

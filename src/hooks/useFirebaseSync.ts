@@ -82,9 +82,14 @@ export function useFirebaseSync(
         
         const isDbDefault = isDefaultStudentList(dbStudents);
         const isLocalDefault = isDefaultStudentList(localStudents);
+
+        // Fetch timestamps (in milliseconds)
+        const cloudLastUpdated = data.lastUpdated ? new Date(data.lastUpdated).getTime() : 0;
+        const localLastUpdatedStr = safeStorage.getItem('tutor_db_last_updated');
+        const localLastUpdated = localLastUpdatedStr ? new Date(localLastUpdatedStr).getTime() : 0;
         
-        // Safety check: if local data contains real students but cloud contains only demo students,
-        // we should push local to cloud rather than downloading demo data and overwriting real ones.
+        // Safety check 1: if local data contains real students but cloud contains only demo students,
+        // we should push local to cloud rather than downloading demo data.
         if (!isLocalDefault && isDbDefault) {
           hasInitialLoadCompleted.current = true;
           pushLocalToCloud(user.uid, localStudents, programsRef.current);
@@ -98,7 +103,15 @@ export function useFirebaseSync(
               safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
             }
           }
-        } else {
+        } 
+        // Safety check 2: if local data is not default and has been updated more recently than the cloud,
+        // push the local data to cloud.
+        else if (!isLocalDefault && localLastUpdated > cloudLastUpdated) {
+          hasInitialLoadCompleted.current = true;
+          pushLocalToCloud(user.uid, localStudents, programsRef.current);
+        } 
+        // Default sync behavior: Cloud is newer or same, or local is default: download cloud data
+        else {
           if (data.students) {
             const dbStudentsStr = JSON.stringify(dbStudents);
             const localStudentsStr = JSON.stringify(localStudents);
@@ -122,6 +135,11 @@ export function useFirebaseSync(
               setSyllabusPrograms(data.programs);
               safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
             }
+          }
+
+          // Align the local timestamp with the cloud timestamp
+          if (data.lastUpdated) {
+            safeStorage.setItem('tutor_db_last_updated', data.lastUpdated);
           }
           
           hasInitialLoadCompleted.current = true;
@@ -170,10 +188,11 @@ export function useFirebaseSync(
   const pushLocalToCloud = async (userId: string, sList: Student[], pList: SyllabusProgram[]) => {
     try {
       const userDocRef = doc(db, 'users', userId);
+      const timestamp = new Date().toISOString();
       const dataToSave = {
         students: sList,
         programs: pList,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: timestamp
       };
       
       // Cache locally what we are sending so the push effect is pacified
@@ -181,6 +200,10 @@ export function useFirebaseSync(
       lastCloudProgramsRef.current = JSON.stringify(pList);
       
       await setDoc(userDocRef, dataToSave, { merge: true });
+      
+      // Save matching local timestamp
+      safeStorage.setItem('tutor_db_last_updated', timestamp);
+      
       setSyncStatus('saved');
     } catch (e) {
       console.error('Failed to sync to Firestore:', e);
