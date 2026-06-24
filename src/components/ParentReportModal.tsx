@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Student } from '../types';
-import { X, Calendar, BookOpen, AlertCircle, CheckCircle, Maximize2, Minimize2 } from 'lucide-react';
+import { X, Calendar, BookOpen, AlertCircle, CheckCircle, Maximize2, Minimize2, Award } from 'lucide-react';
 
 interface ParentReportModalProps {
   student: Student;
@@ -9,6 +9,7 @@ interface ParentReportModalProps {
 
 export function ParentReportModal({ student, onClose }: ParentReportModalProps) {
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [reportStyle, setReportStyle] = useState<'cosmic' | 'classic' | 'patsan'>('cosmic');
 
   // Statistics calculations
   const totalLessons = student.lessons.length;
@@ -84,87 +85,355 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
             </button>
           </div>
         </div>
+
+        {/* Style selection tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 py-3 mb-3 border-b border-white/5 select-none shrink-0">
+          <span className="text-[10px] text-[#ccd3de]/50 uppercase tracking-wider font-mono">Выбор стиля отчета:</span>
+          <div className="flex flex-wrap gap-1.5 p-1 bg-white/[0.02] border border-white/5 rounded-2xl">
+            <button
+              type="button"
+              onClick={() => setReportStyle('cosmic')}
+              className={`px-3 py-1.5 rounded-xl text-[10px] uppercase font-mono tracking-wider transition-all duration-200 cursor-pointer ${
+                reportStyle === 'cosmic'
+                  ? 'bg-gradient-to-r from-[#F4C2D0]/20 to-[#C3B4FC]/20 text-white border border-[#C3B4FC]/30 font-semibold'
+                  : 'text-[#ccd3de]/60 hover:text-white border border-transparent'
+              }`}
+            >
+              🌌 Космический
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportStyle('classic')}
+              className={`px-3 py-1.5 rounded-xl text-[10px] uppercase font-mono tracking-wider transition-all duration-200 cursor-pointer ${
+                reportStyle === 'classic'
+                  ? 'bg-white text-stone-950 border border-stone-300 font-semibold shadow-sm'
+                  : 'text-[#ccd3de]/60 hover:text-white border border-transparent'
+              }`}
+            >
+              📜 Строгий классический
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportStyle('patsan')}
+              className={`px-3 py-1.5 rounded-xl text-[10px] uppercase font-mono tracking-wider transition-all duration-200 cursor-pointer ${
+                reportStyle === 'patsan'
+                  ? 'bg-[#1e293b] text-[#94a3b8] border border-[#475569] font-semibold'
+                  : 'text-[#ccd3de]/60 hover:text-white border border-transparent'
+              }`}
+            >
+              👔 Стальной темный
+            </button>
+          </div>
+        </div>
  
         {/* Scrollable Stage Wrapper */}
         <div className="flex-grow overflow-y-auto pr-1 my-3 custom-scrollbar">
           
-          {/* SCREENSHOT STAGE AREA (Slimmed down details, Thin elegant typography, Ultra rounded accents) */}
-          <div className={`relative bg-[#0d0f14]/40 border border-white/5 rounded-2xl text-slate-300 shadow-3xl overflow-hidden transition-all duration-300 font-sans font-light tracking-wide ${
-            isFullScreen ? 'p-8 md:p-10' : 'p-5 md:p-6'
-          }`} id="patent-screenshot-container">
+          {/* SCREENSHOT STAGE AREA */}
+          <div 
+            className={`relative overflow-hidden transition-all duration-300 ${
+              isFullScreen ? 'p-8 md:p-10' : 'p-5 md:p-6'
+            } ${
+              reportStyle === 'cosmic'
+                ? 'bg-[#0d0f14]/40 border border-white/5 rounded-2xl text-slate-300 shadow-3xl font-sans font-light tracking-wide'
+                : reportStyle === 'classic'
+                  ? 'bg-[#fbfaf6] text-stone-800 border border-stone-200 rounded-xl shadow-md font-serif tracking-normal'
+                  : 'bg-[#0f131a] text-slate-300 border border-[#2d3748] rounded-2xl shadow-3xl font-sans font-light tracking-wide'
+            }`} 
+            id="patent-screenshot-container"
+          >
             
-            {/* Soft Glowing Orbs in Background */}
-            <div className="absolute top-0 right-0 w-48 h-48 bg-[#F4C2D0]/5 rounded-full blur-3xl pointer-events-none select-none" />
-            <div className="absolute bottom-0 left-0 w-36 h-36 bg-[#C3B4FC]/5 rounded-full blur-3xl pointer-events-none select-none" />
-   
-            {/* Accent colored top line strip */}
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#F4C2D0] to-[#C3B4FC] opacity-40" />
+            {/* Background elements based on theme */}
+            {reportStyle === 'cosmic' && (
+              <>
+                <div className="absolute top-0 right-0 w-48 h-48 bg-[#F4C2D0]/5 rounded-full blur-3xl pointer-events-none select-none" />
+                <div className="absolute bottom-0 left-0 w-36 h-36 bg-[#C3B4FC]/5 rounded-full blur-3xl pointer-events-none select-none" />
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#F4C2D0] to-[#C3B4FC] opacity-40" />
+              </>
+            )}
+
+            {reportStyle === 'classic' && (
+              <>
+                <div className="absolute top-0 left-0 right-0 h-1 bg-stone-300 opacity-80" />
+                {/* Academic coat of arms icon watermarked */}
+                <div className="absolute -top-12 -right-12 w-40 h-40 opacity-[0.02] border border-stone-400 rounded-full flex items-center justify-center font-sans tracking-widest text-[#000] rotate-12 select-none pointer-events-none text-[8px]">
+                  OFFICIAL AUDIT REPORT WAKEUP ACADEMY
+                </div>
+              </>
+            )}
+
+            {reportStyle === 'patsan' && (
+              <>
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-slate-600 opacity-60" />
+                <div className="absolute top-2 right-3 text-[8px] text-slate-500 uppercase select-none font-mono tracking-widest">
+                  СТАЛЬНОЙ ТЕМНЫЙ ДИЗАЙН
+                </div>
+              </>
+            )}
    
             {/* Card Header information */}
-            <div className="flex justify-between items-start border-b border-white/5 pb-4 mb-5 relative z-10 select-none">
+            <div className={`flex justify-between items-start pb-4 mb-5 relative z-10 select-none ${
+              reportStyle === 'cosmic'
+                ? 'border-b border-white/5'
+                : reportStyle === 'classic'
+                  ? 'border-b border-stone-200'
+                  : 'border-b border-slate-850'
+            }`}>
               <div className="flex items-center gap-4">
-                <span className="text-4xl select-none bg-white/[0.02] p-2 rounded-2xl border border-white/5 leading-none shrink-0">{student.emoji}</span>
-                <div>
-                  <h1 className="text-base sm:text-lg font-sans font-light text-slate-100 tracking-wider leading-snug">{student.name}</h1>
-                  <p className="text-[10px] text-[#F4C2D0]/60 font-sans tracking-widest uppercase mt-0.5">{student.subject} ({student.gradeClass})</p>
-                  <p className="text-[9px] text-[#ccd3de]/40 mt-1 font-light">Цель курса: {student.goal}</p>
-                </div>
+                {reportStyle === 'cosmic' && (
+                  <>
+                    <span className="text-4xl select-none bg-white/[0.02] p-2 rounded-2xl border border-white/5 leading-none shrink-0">{student.emoji}</span>
+                    <div>
+                      <h1 className="text-base sm:text-lg font-sans font-light text-slate-100 tracking-wider leading-snug">{student.name}</h1>
+                      <p className="text-[10px] text-[#F4C2D0]/60 font-sans tracking-widest uppercase mt-0.5">{student.subject} ({student.gradeClass})</p>
+                      <p className="text-[9px] text-[#ccd3de]/40 mt-1 font-light">Цель курса: {student.goal}</p>
+                    </div>
+                  </>
+                )}
+
+                {reportStyle === 'classic' && (
+                  <>
+                    <div className="w-14 h-14 flex items-center justify-center bg-stone-50 border border-stone-200 rounded-full text-3xl shrink-0 leading-none shadow-sm select-none">
+                      {student.emoji}
+                    </div>
+                    <div>
+                      <h1 className="text-lg sm:text-xl font-serif font-medium text-stone-900 tracking-normal leading-tight">{student.name}</h1>
+                      <p className="text-[10px] text-stone-500 font-sans tracking-widest uppercase mt-0.5">{student.subject} ({student.gradeClass})</p>
+                      <p className="text-[9px] text-stone-400 mt-1 font-sans italic">Цель курса: {student.goal}</p>
+                    </div>
+                  </>
+                )}
+
+                {reportStyle === 'patsan' && (
+                  <>
+                    <div className="text-3xl p-2 border border-slate-700 bg-slate-900 rounded-xl shrink-0 leading-none">
+                      {student.emoji}
+                    </div>
+                    <div>
+                      <h1 className="text-base sm:text-lg font-sans font-medium text-slate-100 tracking-wider leading-snug">{student.name}</h1>
+                      <p className="text-[10px] text-slate-400 font-sans tracking-widest uppercase mt-0.5">{student.subject} ({student.gradeClass})</p>
+                      <p className="text-[9px] text-slate-500 mt-1 font-light">Цель курса: {student.goal}</p>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="text-right shrink-0">
-                <span className="text-[8px] uppercase tracking-[0.25em] font-light text-[#ccd3de]/35 block">Карта Успеваемости</span>
-                <p className="text-[8px] text-[#ccd3de]/30 mt-1 font-mono">{new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                {reportStyle === 'cosmic' && (
+                  <>
+                    <span className="text-[8px] uppercase tracking-[0.25em] font-light text-[#ccd3de]/35 block">Карта Успеваемости</span>
+                    <p className="text-[8px] text-[#ccd3de]/30 mt-1 font-mono">{new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  </>
+                )}
+                {reportStyle === 'classic' && (
+                  <>
+                    <span className="text-[8px] uppercase tracking-[0.2em] font-light text-stone-500 block">Карта Успеваемости</span>
+                    <p className="text-[8px] text-stone-400 mt-1 font-sans">Дата: {new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  </>
+                )}
+                {reportStyle === 'patsan' && (
+                  <>
+                    <span className="text-[8px] uppercase tracking-[0.2em] font-light text-slate-500 block">Карта Успеваемости</span>
+                    <p className="text-[8px] text-slate-500 mt-1 font-mono">{new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  </>
+                )}
               </div>
             </div>
-   
+    
             {/* Statistics Numeric Matrix (3-column layout) */}
             <div className="grid grid-cols-3 gap-3 mb-5 relative z-10 select-none">
-              <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-2.5 text-center">
-                <p className="text-[8px] uppercase tracking-wider text-[#ccd3de]/40">Всего уроков</p>
-                <p className="text-xl sm:text-2xl font-sans font-light text-slate-100 mt-1">{totalLessons}</p>
-                <p className="text-[8px] text-[#ccd3de]/20 font-light mt-0.5">за все время</p>
-              </div>
-              <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-2.5 text-center">
-                <p className="text-[8px] uppercase tracking-wider text-[#C3B4FC]/70">Посещено</p>
-                <p className="text-xl sm:text-2xl font-sans font-light text-[#C3B4FC]/85 mt-1">{countAttended}</p>
-                <p className="text-[8px] text-[#C3B4FC]/30 font-light mt-0.5">уроков пройдено</p>
-              </div>
-              <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-2.5 text-center">
-                <p className="text-[8px] uppercase tracking-wider text-[#D4B2B6]">Пропущено</p>
-                <p className="text-xl sm:text-2xl font-sans font-light text-[#D4B2B6] mt-1">{totalMissed}</p>
-                <p className="text-[8px] text-[#D4B2B6]/40 font-light mt-0.5">{missedExcused} ув. / {missedUnexcused} неув.</p>
-              </div>
+              {reportStyle === 'cosmic' && (
+                <>
+                  <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-[#ccd3de]/40 font-sans">Всего уроков</p>
+                    <p className="text-xl sm:text-2xl font-sans font-light text-slate-100 mt-1">{totalLessons}</p>
+                    <p className="text-[8px] text-[#ccd3de]/20 font-light mt-0.5 font-sans">за все время</p>
+                  </div>
+                  <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-[#C3B4FC]/70 font-sans">Посещено</p>
+                    <p className="text-xl sm:text-2xl font-sans font-light text-[#C3B4FC]/85 mt-1">{countAttended}</p>
+                    <p className="text-[8px] text-[#C3B4FC]/30 font-light mt-0.5 font-sans">уроков пройдено</p>
+                  </div>
+                  <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-[#D4B2B6] font-sans">Пропущено</p>
+                    <p className="text-xl sm:text-2xl font-sans font-light text-[#D4B2B6] mt-1">{totalMissed}</p>
+                    <p className="text-[8px] text-[#D4B2B6]/40 font-light mt-0.5 font-sans">{missedExcused} ув. / {missedUnexcused} неув.</p>
+                  </div>
+                </>
+              )}
+
+              {reportStyle === 'classic' && (
+                <>
+                  <div className="bg-stone-50/40 border border-stone-200 rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-stone-500 font-sans">Всего уроков</p>
+                    <p className="text-xl sm:text-2xl font-serif text-stone-800 mt-1">{totalLessons}</p>
+                    <p className="text-[8px] text-stone-400 font-light mt-0.5 font-sans">по учебному плану</p>
+                  </div>
+                  <div className="bg-stone-50/40 border border-stone-200 rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-stone-500 font-sans">Посещено</p>
+                    <p className="text-xl sm:text-2xl font-serif text-stone-800 mt-1">{countAttended}</p>
+                    <p className="text-[8px] text-stone-400 font-light mt-0.5 font-sans">занятий пройдено</p>
+                  </div>
+                  <div className="bg-stone-50/40 border border-stone-200 rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-stone-500 font-sans">Пропущено</p>
+                    <p className="text-xl sm:text-2xl font-serif text-stone-800 mt-1">{totalMissed}</p>
+                    <p className="text-[8px] text-stone-400 font-light mt-0.5 font-sans">{missedExcused} ув. / {missedUnexcused} неув.</p>
+                  </div>
+                </>
+              )}
+
+              {reportStyle === 'patsan' && (
+                <>
+                  <div className="bg-slate-900/30 border border-slate-800 rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-slate-400 font-sans">Всего уроков</p>
+                    <p className="text-xl sm:text-2xl font-sans font-light text-slate-100 mt-1">{totalLessons}</p>
+                    <p className="text-[8px] text-slate-500 font-light mt-0.5 font-sans">по учебному плану</p>
+                  </div>
+                  <div className="bg-slate-900/30 border border-slate-800 rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-blue-400/80 font-sans">Посещено</p>
+                    <p className="text-xl sm:text-2xl font-sans font-light text-blue-350 mt-1">{countAttended}</p>
+                    <p className="text-[8px] text-slate-500 font-light mt-0.5 font-sans">занятий пройдено</p>
+                  </div>
+                  <div className="bg-slate-900/30 border border-slate-800 rounded-xl p-2.5 text-center">
+                    <p className="text-[8px] uppercase tracking-wider text-slate-400 font-sans">Пропущено</p>
+                    <p className="text-xl sm:text-2xl font-sans font-light text-slate-350 mt-1">{totalMissed}</p>
+                    <p className="text-[8px] text-slate-500 font-light mt-0.5 font-sans">{missedExcused} ув. / {missedUnexcused} неув.</p>
+                  </div>
+                </>
+              )}
             </div>
-   
+    
             {/* Details breakdown sections */}
             <div className="space-y-4 relative z-10">
+              
               {/* Homework progress */}
-              <div className="bg-white/[0.01] border border-white/[0.04] rounded-xl p-3.5 flex flex-col justify-center">
-                <h4 className="text-[10px] uppercase tracking-widest text-[#F4C2D0]/65 font-light flex items-center gap-1.5 mb-2.5 font-sans">
-                  <BookOpen className="w-3.5 h-3.5" strokeWidth={1.2} />
-                  Выполнение домашних заданий
-                </h4>
-                <p className="text-xs sm:text-sm font-light text-[#C3B4FC]/80 leading-normal">
-                  Выполнено домашних работ: <strong className="text-slate-150 font-sans font-light text-sm sm:text-base">{hwCompleted + hwPartially} из {totalHW}</strong>
-                </p>
+              <div className={`p-4 flex flex-col justify-center ${
+                reportStyle === 'cosmic'
+                  ? 'bg-white/[0.01] border border-white/[0.04] rounded-xl'
+                  : reportStyle === 'classic'
+                    ? 'bg-[#fbfaf6] border border-stone-200 rounded-xl text-stone-800 font-sans'
+                    : 'bg-slate-900/30 border border-slate-800 rounded-xl text-slate-300 font-sans'
+              }`}>
+                {reportStyle === 'cosmic' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-[#F4C2D0]/65 font-light flex items-center gap-1.5 mb-2.5 font-sans">
+                      <BookOpen className="w-3.5 h-3.5" strokeWidth={1.2} />
+                      Выполнение домашних заданий
+                    </h4>
+                    <p className="text-xs sm:text-sm font-light text-[#C3B4FC]/80 leading-normal">
+                      Выполнено домашних работ: <strong className="text-slate-150 font-sans font-light text-sm sm:text-base">{hwCompleted + hwPartially} из {totalHW}</strong>
+                    </p>
+                  </>
+                )}
+
+                {reportStyle === 'classic' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-stone-500 font-medium flex items-center gap-1.5 mb-2.5 font-sans">
+                      <BookOpen className="w-3.5 h-3.5 text-stone-500" strokeWidth={1.2} />
+                      Выполнение домашних заданий
+                    </h4>
+                    <p className="text-xs sm:text-sm font-light text-stone-700 leading-normal">
+                      Сдано домашних работ: <strong className="text-stone-900 font-sans font-medium text-sm sm:text-base">{hwCompleted + hwPartially} из {totalHW}</strong>
+                    </p>
+                  </>
+                )}
+
+                {reportStyle === 'patsan' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-medium flex items-center gap-1.5 mb-2.5 font-sans">
+                      <BookOpen className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.2} />
+                      Выполнение домашних заданий
+                    </h4>
+                    <p className="text-xs sm:text-sm font-light text-slate-300 leading-normal">
+                      Сдано домашних работ: <strong className="text-slate-100 font-sans font-medium text-sm sm:text-base">{hwCompleted + hwPartially} из {totalHW}</strong>
+                    </p>
+                  </>
+                )}
   
                 {incompleteLessons.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-white/[0.04] space-y-2">
-                    <p className="text-[9px] uppercase font-light text-[#D4B2B6] tracking-widest">Причины недовыполнения ДЗ:</p>
+                  <div className={`mt-3 pt-3 border-t space-y-2 ${
+                    reportStyle === 'cosmic'
+                      ? 'border-white/[0.04]'
+                      : reportStyle === 'classic'
+                        ? 'border-stone-200'
+                        : 'border-slate-800/60'
+                  }`}>
+                    <p className={`text-[9px] uppercase tracking-widest font-bold ${
+                      reportStyle === 'cosmic'
+                        ? 'text-[#D4B2B6]'
+                        : reportStyle === 'classic'
+                          ? 'text-stone-700 font-sans'
+                          : 'text-slate-400 font-sans'
+                    }`}>
+                      {reportStyle === 'cosmic' && "Причины недовыполнения ДЗ:"}
+                      {reportStyle === 'classic' && "Сведения о невыполненных домашних работах:"}
+                      {reportStyle === 'patsan' && "Сведения о невыполненных домашних работах:"}
+                    </p>
                     <div className="space-y-1.5">
                       {incompleteLessons.map((l) => (
-                        <div key={l.id} className="text-[11px] bg-white/[0.01] border border-white/[0.04] rounded-xl p-2 flex flex-col gap-1 font-sans">
-                          <div className="flex justify-between items-center text-[9px] text-[#ccd3de]/40">
-                            <span>Урок {new Date(l.date).toLocaleDateString('ru-RU')}</span>
-                            <span className={l.homeworkStatus === 'missed' ? 'text-[#D4B2B6] font-light uppercase text-[8px]' : 'text-[#C3B4FC]/70 font-light uppercase text-[8px]'}>
-                              {l.homeworkStatus === 'missed' ? 'Не сдано' : 'Частично'}
-                            </span>
+                        <div 
+                          key={l.id} 
+                          className={`p-2 flex flex-col gap-1 ${
+                            reportStyle === 'cosmic'
+                              ? 'text-[11px] bg-white/[0.01] border border-white/[0.04] rounded-xl font-sans'
+                              : reportStyle === 'classic'
+                                ? 'text-[11px] bg-stone-50 border border-stone-200 rounded-xl font-sans text-stone-700'
+                                : 'text-[11px] bg-slate-900/10 border border-slate-800/60 rounded-xl font-sans text-slate-300'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center text-[9px]">
+                            {reportStyle === 'cosmic' && (
+                              <>
+                                <span className="text-[#ccd3de]/50">Урок {new Date(l.date).toLocaleDateString('ru-RU')}</span>
+                                <span className={l.homeworkStatus === 'missed' ? 'text-[#D4B2B6] font-light uppercase text-[8px]' : 'text-[#C3B4FC]/70 font-light uppercase text-[8px]'}>
+                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : 'Частично'}
+                                </span>
+                              </>
+                            )}
+
+                            {reportStyle === 'classic' && (
+                              <>
+                                <span className="text-stone-500">Задание от {new Date(l.date).toLocaleDateString('ru-RU')}</span>
+                                <span className={`font-sans font-medium uppercase text-[8px] ${l.homeworkStatus === 'missed' ? 'text-stone-400' : 'text-stone-600'}`}>
+                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : 'Частично'}
+                                </span>
+                              </>
+                            )}
+
+                            {reportStyle === 'patsan' && (
+                              <>
+                                <span className="text-slate-500">Задание от {new Date(l.date).toLocaleDateString('ru-RU')}</span>
+                                <span className={`font-sans font-medium uppercase text-[8px] ${l.homeworkStatus === 'missed' ? 'text-slate-400' : 'text-blue-400'}`}>
+                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : 'Частично'}
+                                </span>
+                              </>
+                            )}
                           </div>
                           {l.homework && (
-                            <p className="text-[#ccd3de]/50 leading-tight">Задание: <span className="text-[#ccd3de]/65">{l.homework}</span></p>
+                            <p className="text-[10px] leading-tight">
+                              {reportStyle === 'cosmic' && <>Задание: <span className="text-[#ccd3de]/65">{l.homework}</span></>}
+                              {reportStyle === 'classic' && <>Материал задания: <span className="text-stone-600 font-medium">«{l.homework}»</span></>}
+                              {reportStyle === 'patsan' && <>Материал задания: <span className="text-slate-400 font-medium">«{l.homework}»</span></>}
+                            </p>
                           )}
-                          <p className="text-[#ccd3de]/70 leading-normal">
-                            <span className="text-[#ccd3de]/40 font-light">Причина:</span>{' '}
-                            <span className="text-[#D4B2B6] font-light italic">{l.homeworkReason || 'Причина не указана'}</span>
+                          <p className="text-[11px] leading-normal">
+                            {reportStyle === 'cosmic' && (
+                              <>
+                                <span className="text-[#ccd3de]/40 font-light">Причина:</span>{' '}
+                                <span className="text-[#D4B2B6] font-light italic">{l.homeworkReason || 'Причина не указана'}</span>
+                              </>
+                            )}
+                            {reportStyle === 'classic' && (
+                              <>
+                                <span className="text-stone-500 font-light">Причина невыполнения:</span>{' '}
+                                <span className="text-stone-600 font-medium italic">{l.homeworkReason || 'Не указана'}</span>
+                              </>
+                            )}
+                            {reportStyle === 'patsan' && (
+                              <>
+                                <span className="text-slate-500 font-light">Причина невыполнения:</span>{' '}
+                                <span className="text-slate-400 font-medium italic">{l.homeworkReason || 'Не указана'}</span>
+                              </>
+                            )}
                           </p>
                         </div>
                       ))}
@@ -174,95 +443,313 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
               </div>
   
               {/* Progress Card */}
-              <div className="bg-white/[0.01] border border-white/[0.04] rounded-xl p-3.5">
-                <h4 className="text-[10px] uppercase tracking-widest text-[#F4C2D0]/65 font-light flex items-center gap-1.5 mb-3 font-sans">
-                  📈 Усвоение программы и прогресс
-                </h4>
-                <div className="space-y-2.5">
+              <div className={`p-4 ${
+                reportStyle === 'cosmic'
+                  ? 'bg-white/[0.01] border border-white/[0.04] rounded-xl'
+                  : reportStyle === 'classic'
+                    ? 'bg-[#fbfaf6] border border-stone-200 rounded-xl text-stone-800 font-sans'
+                    : 'bg-slate-900/30 border border-slate-800 rounded-xl text-slate-300 font-sans'
+              }`}>
+                {reportStyle === 'cosmic' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-[#F4C2D0]/65 font-light flex items-center gap-1.5 mb-3 font-sans">
+                      📈 Усвоение программы и прогресс
+                    </h4>
+                  </>
+                )}
+
+                {reportStyle === 'classic' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-stone-500 font-medium flex items-center gap-1.5 mb-3 font-sans">
+                      📈 Усвоение программы и прогресс
+                    </h4>
+                  </>
+                )}
+
+                {reportStyle === 'patsan' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-medium flex items-center gap-1.5 mb-3 font-sans">
+                      📈 Усвоение программы и прогресс
+                    </h4>
+                  </>
+                )}
+
+                <div className="space-y-3">
                   {/* Mock progress graph */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center text-[11px]">
-                      <span className="text-[#ccd3de]/60 font-light">Средний результат по пробникам:</span>
-                      <span className="font-light text-slate-100">{avgPct !== null ? `${avgPct}%` : 'Тестовые пробники не проводились'}</span>
+                      {reportStyle === 'cosmic' && (
+                        <>
+                          <span className="text-[#ccd3de]/60 font-light">Средний результат по пробникам:</span>
+                          <span className="font-light text-slate-100">{avgPct !== null ? `${avgPct}%` : 'Тестовые пробники не проводились'}</span>
+                        </>
+                      )}
+                      {reportStyle === 'classic' && (
+                        <>
+                          <span className="text-stone-600 font-light">Средний результат по пробникам:</span>
+                          <span className="font-medium text-stone-800">{avgPct !== null ? `${avgPct}%` : 'Тестовые пробники не проводились'}</span>
+                        </>
+                      )}
+                      {reportStyle === 'patsan' && (
+                        <>
+                          <span className="text-slate-400 font-light">Средний результат по пробникам:</span>
+                          <span className="font-medium text-slate-100">{avgPct !== null ? `${avgPct}%` : 'Тестовые пробники не проводились'}</span>
+                        </>
+                      )}
                     </div>
                     {avgPct !== null && (
-                      <div className="w-full bg-white/[0.02] border border-white/5 rounded-full h-1 overflow-hidden">
-                        <div className="bg-gradient-to-r from-[#C3B4FC]/50 to-[#C3B4FC] h-1 rounded-full" style={{ width: `${avgPct}%` }} />
+                      <div className={`w-full h-1.5 overflow-hidden rounded-full ${
+                        reportStyle === 'cosmic'
+                          ? 'bg-white/[0.02] border border-white/5'
+                          : reportStyle === 'classic'
+                            ? 'bg-stone-200/50 border border-stone-300/30'
+                            : 'bg-slate-950 border border-slate-800'
+                      }`}>
+                        <div 
+                          className={`h-full rounded-full ${
+                            reportStyle === 'cosmic'
+                              ? 'bg-gradient-to-r from-[#C3B4FC]/50 to-[#C3B4FC]'
+                              : reportStyle === 'classic'
+                                ? 'bg-stone-400'
+                                : 'bg-blue-500'
+                          }`} 
+                          style={{ width: `${avgPct}%` }} 
+                        />
                       </div>
                     )}
                   </div>
   
                   {/* Gap closures stats */}
-                  <div className="space-y-1 pt-1.5 border-t border-white/[0.04]">
+                  <div className={`space-y-1 pt-1.5 border-t ${
+                    reportStyle === 'cosmic'
+                      ? 'border-white/[0.04]'
+                      : reportStyle === 'classic'
+                        ? 'border-stone-200'
+                        : 'border-slate-800/60'
+                  }`}>
                     <div className="flex justify-between items-center text-[11px]">
-                      <span className="text-[#ccd3de]/60 font-light">Ликвидировано закрытых пробелов:</span>
-                      <span className="font-light text-slate-100">
-                        {totalGaps > 0 ? `${masteredGaps} из ${totalGaps} тем (${gapPercentage}%)` : 'Все пробелы устранены!'}
-                      </span>
+                      {reportStyle === 'cosmic' && (
+                        <>
+                          <span className="text-[#ccd3de]/60 font-light">Ликвидировано закрытых пробелов:</span>
+                          <span className="font-light text-slate-100">
+                            {totalGaps > 0 ? `${masteredGaps} из ${totalGaps} тем (${gapPercentage}%)` : 'Все пробелы устранены!'}
+                          </span>
+                        </>
+                      )}
+                      {reportStyle === 'classic' && (
+                        <>
+                          <span className="text-stone-600 font-light">Ликвидировано пробелов в знаниях:</span>
+                          <span className="font-medium text-stone-800">
+                            {totalGaps > 0 ? `${masteredGaps} из ${totalGaps} тем (${gapPercentage}%)` : 'Все пробелы устранены!'}
+                          </span>
+                        </>
+                      )}
+                      {reportStyle === 'patsan' && (
+                        <>
+                          <span className="text-slate-400 font-light">Ликвидировано пробелов в знаниях:</span>
+                          <span className="font-medium text-slate-100">
+                            {totalGaps > 0 ? `${masteredGaps} из ${totalGaps} тем (${gapPercentage}%)` : 'Все пробелы успешно устранены'}
+                          </span>
+                        </>
+                      )}
                     </div>
                     {totalGaps > 0 && gapPercentage !== null && (
-                      <div className="w-full bg-white/[0.02] border border-white/5 rounded-full h-1 overflow-hidden">
-                        <div className="bg-gradient-to-r from-[#C3B4FC]/55 to-slate-400/70 h-1 rounded-full" style={{ width: `${gapPercentage}%` }} />
+                      <div className={`w-full h-1.5 overflow-hidden rounded-full ${
+                        reportStyle === 'cosmic'
+                          ? 'bg-white/[0.02] border border-white/5'
+                          : reportStyle === 'classic'
+                            ? 'bg-stone-200/50 border border-stone-300/30'
+                            : 'bg-slate-950 border border-slate-800'
+                      }`}>
+                        <div 
+                          className={`h-full rounded-full ${
+                            reportStyle === 'cosmic'
+                              ? 'bg-gradient-to-r from-[#C3B4FC]/55 to-slate-400/70'
+                              : reportStyle === 'classic'
+                                ? 'bg-stone-400'
+                                : 'bg-slate-600'
+                          }`} 
+                          style={{ width: `${gapPercentage}%` }} 
+                        />
                       </div>
                     )}
                   </div>
   
                   {/* Program progression bar */}
                   {student.program && (
-                    <div className="space-y-1 pt-1.5 border-t border-white/[0.04]">
+                    <div className={`space-y-1 pt-1.5 border-t ${
+                      reportStyle === 'cosmic'
+                        ? 'border-white/[0.04]'
+                        : reportStyle === 'classic'
+                          ? 'border-stone-200'
+                          : 'border-slate-800/60'
+                    }`}>
                       <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-[#ccd3de]/60 font-light">Пройдено тем по календарному плану:</span>
-                        <span className="font-light text-slate-100">{programCompletedCount} из {programTopicsCount} тем ({programProgressPct}%)</span>
+                        {reportStyle === 'cosmic' && (
+                          <>
+                            <span className="text-[#ccd3de]/60 font-light">Пройдено тем по календарному плану:</span>
+                            <span className="font-light text-slate-100">{programCompletedCount} из {programTopicsCount} тем ({programProgressPct}%)</span>
+                          </>
+                        )}
+                        {reportStyle === 'classic' && (
+                          <>
+                            <span className="text-stone-600 font-light">Освоение разделов учебной программы:</span>
+                            <span className="font-medium text-stone-800">{programCompletedCount} из {programTopicsCount} тем ({programProgressPct}%)</span>
+                          </>
+                        )}
+                        {reportStyle === 'patsan' && (
+                          <>
+                            <span className="text-slate-400 font-light">Освоение разделов учебной программы:</span>
+                            <span className="font-medium text-slate-100">{programCompletedCount} из {programTopicsCount} тем ({programProgressPct}%)</span>
+                          </>
+                        )}
                       </div>
-                      <div className="w-full bg-white/[0.02] border border-white/5 rounded-full h-1 overflow-hidden">
-                        <div className="bg-gradient-to-r from-[#F4C2D0]/60 to-[#C3B4FC]/70 h-1 rounded-full" style={{ width: `${programProgressPct}%` }} />
+                      <div className={`w-full h-1.5 overflow-hidden rounded-full ${
+                        reportStyle === 'cosmic'
+                          ? 'bg-white/[0.02] border border-white/5'
+                          : reportStyle === 'classic'
+                            ? 'bg-stone-200/50 border border-stone-300/30'
+                            : 'bg-slate-950 border border-slate-800'
+                      }`}>
+                        <div 
+                          className={`h-full rounded-full ${
+                            reportStyle === 'cosmic'
+                              ? 'bg-gradient-to-r from-[#F4C2D0]/60 to-[#C3B4FC]/70'
+                              : reportStyle === 'classic'
+                                ? 'bg-stone-400'
+                                : 'bg-slate-500'
+                          }`} 
+                          style={{ width: `${programProgressPct}%` }} 
+                        />
                       </div>
                     </div>
                   )}
                 </div>
               </div>
   
-              {/* KTP deviation (lag) */}
-              <div className="bg-white/[0.01] border border-white/[0.04] rounded-xl p-3.5 flex flex-col justify-center">
-                <h4 className="text-[10px] uppercase tracking-widest text-[#F4C2D0]/65 font-light flex items-center gap-1.5 mb-2 font-sans">
-                  <AlertCircle className="w-3.5 h-3.5" strokeWidth={1.2} />
-                  Отставание от программы (КТП)
-                </h4>
-                <p className={`text-xs font-light ${hasKtpLag ? 'text-[#D4B2B6]' : 'text-[#C3B4FC]/80'}`}>
-                  {hasKtpLag ? (
-                    <span>Отставание от КТП: <strong className="text-slate-100 text-xs sm:text-sm font-sans font-light">{ktpLagCount}</strong> {ktpLagCount === 1 ? 'занятие' : (ktpLagCount > 1 && ktpLagCount < 5) ? 'занятия' : 'занятий'}</span>
-                  ) : (
-                    <span>Идет ровно по КТП (отставаний нет)</span>
-                  )}
-                </p>
+              {/* KTP deviation (lag) & Plan info */}
+              <div className={`p-4 flex flex-col justify-center ${
+                reportStyle === 'cosmic'
+                  ? 'bg-white/[0.01] border border-white/[0.04] rounded-xl'
+                  : reportStyle === 'classic'
+                    ? 'bg-[#fbfaf6] border border-stone-200 rounded-xl text-stone-800 font-sans'
+                    : 'bg-slate-900/30 border border-slate-800 rounded-xl text-slate-300 font-sans'
+              }`}>
+                {reportStyle === 'cosmic' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-[#F4C2D0]/65 font-light flex items-center gap-1.5 mb-2 font-sans">
+                      <AlertCircle className="w-3.5 h-3.5" strokeWidth={1.2} />
+                      Отставание от программы (КТП)
+                    </h4>
+                    <p className={`text-xs font-light ${hasKtpLag ? 'text-[#D4B2B6]' : 'text-[#C3B4FC]/80'}`}>
+                      {hasKtpLag ? (
+                        <span>Отставание от КТП: <strong className="text-slate-100 text-xs sm:text-sm font-sans font-light">{ktpLagCount}</strong> {ktpLagCount === 1 ? 'занятие' : (ktpLagCount > 1 && ktpLagCount < 5) ? 'занятия' : 'занятий'}</span>
+                      ) : (
+                        <span>Идет ровно по КТП (отставаний нет)</span>
+                      )}
+                    </p>
+                  </>
+                )}
+
+                {reportStyle === 'classic' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-stone-500 font-medium flex items-center gap-1.5 mb-2 font-sans">
+                      <AlertCircle className="w-3.5 h-3.5 text-stone-500" strokeWidth={1.2} />
+                      Календарно-тематический график (КТП)
+                    </h4>
+                    <p className="text-xs font-light text-stone-700">
+                      {hasKtpLag ? (
+                        <span>Выявлено отставание от КТП: <strong className="text-stone-900 text-xs sm:text-sm font-sans font-medium">{ktpLagCount} {ktpLagCount === 1 ? 'занятие' : (ktpLagCount > 1 && ktpLagCount < 5) ? 'занятия' : 'занятий'}</strong></span>
+                      ) : (
+                        <span>Обучение проходит в полном соответствии с графиком КТП</span>
+                      )}
+                    </p>
+                  </>
+                )}
+
+                {reportStyle === 'patsan' && (
+                  <>
+                    <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-medium flex items-center gap-1.5 mb-2 font-sans">
+                      <AlertCircle className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.2} />
+                      Календарно-тематический график (КТП)
+                    </h4>
+                    <p className="text-xs font-light text-slate-300">
+                      {hasKtpLag ? (
+                        <span>Выявлено отставание от КТП: <strong className="text-slate-100 text-xs sm:text-sm font-sans font-medium">{ktpLagCount} {ktpLagCount === 1 ? 'занятие' : (ktpLagCount > 1 && ktpLagCount < 5) ? 'занятия' : 'занятий'}</strong></span>
+                      ) : (
+                        <span>Обучение проходит в полном соответствии с графиком КТП</span>
+                      )}
+                    </p>
+                  </>
+                )}
               </div>
   
-              {/* KTP Program Progress and Lag alert info */}
+              {/* KTP Program Details if present */}
               {student.program && (
-                <div className="bg-white/[0.01] border border-white/[0.04] rounded-xl p-3.5">
-                  <h4 className="text-[10px] uppercase tracking-widest text-[#F4C2D0]/65 font-light flex items-center gap-1.5 mb-2.5 font-sans">
-                    <Calendar className="w-3.5 h-3.5 text-[#F4C2D0]/60" strokeWidth={1.2} />
-                    Учебный план и КТП
+                <div className={`p-4 ${
+                  reportStyle === 'cosmic'
+                    ? 'bg-white/[0.01] border border-white/[0.04] rounded-xl'
+                    : reportStyle === 'classic'
+                      ? 'bg-[#fbfaf6] border border-stone-200 rounded-xl font-sans text-stone-800'
+                      : 'bg-slate-900/30 border border-slate-800 rounded-xl font-sans'
+                }`}>
+                  <h4 className={`text-[10px] uppercase tracking-widest font-bold flex items-center gap-2 mb-3 ${
+                    reportStyle === 'cosmic'
+                      ? 'text-[#F4C2D0]/65 font-sans'
+                      : reportStyle === 'classic'
+                        ? 'text-stone-550 font-sans'
+                        : 'text-slate-400 font-sans'
+                  }`}>
+                    <Calendar className="w-3.5 h-3.5" strokeWidth={1.2} />
+                    {reportStyle === 'cosmic' && "Учебный план и КТП"}
+                    {reportStyle === 'classic' && "Календарно-тематический план"}
+                    {reportStyle === 'patsan' && "Календарно-тематический план"}
                   </h4>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <p className="text-xs text-[#ccd3de]/75 font-light">
-                        Программа обучения: <strong className="text-slate-100 font-light">{student.program.name}</strong>
+                      <p className="text-xs text-[#ccd3de]/75">
+                        {reportStyle === 'cosmic' && (
+                          <>Программа обучения: <strong className="text-slate-100 font-light">{student.program.name}</strong></>
+                        )}
+                        {reportStyle === 'classic' && (
+                          <>Программа обучения: <strong className="text-stone-800 font-medium">«{student.program.name}»</strong></>
+                        )}
+                        {reportStyle === 'patsan' && (
+                          <>Программа обучения: <strong className="text-slate-100 font-medium">«{student.program.name}»</strong></>
+                        )}
                       </p>
-                      <p className="text-[9px] text-[#ccd3de]/40 mt-1 font-mono">
-                        Пройдено тем по плану КТП: {student.program.topics.filter(t => t.status === 'completed').length} из {student.program.topics.length}
+                      <p className="text-[10px] text-zinc-400 mt-1">
+                        {reportStyle === 'cosmic' && `Пройдено тем по плану КТП: ${student.program.topics.filter(t => t.status === 'completed').length} из ${student.program.topics.length}`}
+                        {reportStyle === 'classic' && `Пройдено тем по плану КТП: ${student.program.topics.filter(t => t.status === 'completed').length} из ${student.program.topics.length}`}
+                        {reportStyle === 'patsan' && `Пройдено тем по плану КТП: ${student.program.topics.filter(t => t.status === 'completed').length} из ${student.program.topics.length}`}
                       </p>
                     </div>
                     <div className="shrink-0 select-none">
                       {hasKtpLag ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#D4B2B6]/10 text-[#D4B2B6] border border-[#D4B2B6]/20 rounded-xl text-[9px] font-light uppercase tracking-wider font-sans">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 border text-[9px] font-bold uppercase tracking-wider rounded-xl ${
+                          reportStyle === 'cosmic'
+                            ? 'bg-[#D4B2B6]/10 text-[#D4B2B6] border-[#D4B2B6]/20'
+                            : reportStyle === 'classic'
+                              ? 'bg-stone-100 text-stone-600 border-stone-200 font-sans'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 font-sans'
+                        }`}>
                           <AlertCircle className="w-3 h-3" strokeWidth={1.2} />
-                          Отставание от КТП (на {ktpLagCount} {ktpLagCount === 1 ? 'занятие' : (ktpLagCount > 1 && ktpLagCount < 5) ? 'занятия' : 'занятий'})
+                          {reportStyle === 'cosmic' && `Отставание КТП (${ktpLagCount} у.)`}
+                          {reportStyle === 'classic' && `Отставание КТП (${ktpLagCount} зан.)`}
+                          {reportStyle === 'patsan' && `Отставание КТП (${ktpLagCount} зан.)`}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#C3B4FC]/10 text-[#C3B4FC] border border-[#C3B4FC]/20 rounded-xl text-[9px] font-light uppercase tracking-wider font-sans">
-                          <CheckCircle className="w-3 h-3 text-[#C3B4FC]" strokeWidth={1.2} />
-                          Идет ровно по КТП
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 border text-[9px] font-bold uppercase tracking-wider rounded-xl ${
+                          reportStyle === 'cosmic'
+                            ? 'bg-[#C3B4FC]/10 text-[#C3B4FC] border-[#C3B4FC]/20'
+                            : reportStyle === 'classic'
+                              ? 'bg-stone-50 text-stone-600 border-stone-200/50 font-sans'
+                              : 'bg-slate-950 text-blue-450 border-blue-900/30 font-sans'
+                        }`}>
+                          <CheckCircle className="w-3 h-3 text-blue-400" strokeWidth={1.2} />
+                          {reportStyle === 'cosmic' && "Идет ровно по КТП"}
+                          {reportStyle === 'classic' && "СООТВЕТСТВУЕТ ГРАФИКУ"}
+                          {reportStyle === 'patsan' && "Соответствует графику"}
                         </span>
                       )}
                     </div>
@@ -270,12 +757,20 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                 </div>
               )}
             </div>
-  
+   
             {/* Footnote */}
-            <div className="mt-5 pt-3.5 border-t border-white/[0.04] flex justify-between items-center text-[8px] text-[#ccd3de]/20 select-none font-sans uppercase tracking-widest font-light">
-              <span>Система аналитики прогресса — Отчет успеваемости</span>
+            <div className={`mt-5 pt-3.5 border-t flex justify-between items-center text-[8px] select-none uppercase tracking-widest font-bold ${
+              reportStyle === 'cosmic'
+                ? 'border-white/[0.04] text-[#ccd3de]/20'
+                : reportStyle === 'classic'
+                  ? 'border-stone-200 text-stone-400 font-sans'
+                  : 'border-[#2d3748] text-slate-500 font-sans'
+            }`}>
+              {reportStyle === 'cosmic' && <span>Система аналитики прогресса — Отчет успеваемости</span>}
+              {reportStyle === 'classic' && <span>ИНФОРМАЦИОННЫЙ ОТЧЕТ УСПЕВАЕМОСТИ УЧАЩЕГОСЯ — КЛАССИЧЕСКИЙ ДИЗАЙН</span>}
+              {reportStyle === 'patsan' && <span>ИНФОРМАЦИОННЫЙ ОТЧЕТ УСПЕВАЕМОСТИ УЧАЩЕГОСЯ — СТАЛЬНОЙ ТЕМНЫЙ ДИЗАЙН</span>}
             </div>
-  
+   
           </div>
         </div>
 

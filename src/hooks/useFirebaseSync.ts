@@ -28,6 +28,10 @@ export function useFirebaseSync(
   const lastCloudStudentsRef = useRef<string>('');
   const lastCloudProgramsRef = useRef<string>('');
 
+  // Tracks if the first load from Firestore has finished to avoid local default data race condition
+  const hasInitialLoadCompleted = useRef(false);
+  const [isConnectionBlocked, setIsConnectionBlocked] = useState(false);
+
   // Monitor auth status
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -41,13 +45,29 @@ export function useFirebaseSync(
   useEffect(() => {
     if (!user) {
       setSyncStatus('idle');
+      hasInitialLoadCompleted.current = false;
+      setIsConnectionBlocked(false);
       return;
     }
 
+    hasInitialLoadCompleted.current = false;
     setSyncStatus('syncing');
+    setIsConnectionBlocked(false);
+
+    // Timeout of 5 seconds to detect proxy or network blocks (e.g. Google services in Russia)
+    const timeoutId = setTimeout(() => {
+      if (!hasInitialLoadCompleted.current) {
+        setIsConnectionBlocked(true);
+        console.warn('Firebase connection timed out. Might be blocked by firewall (e.g. in RF without VPN).');
+      }
+    }, 5000);
+
     const userDocRef = doc(db, 'users', user.uid);
 
     const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      setIsConnectionBlocked(false);
+      clearTimeout(timeoutId);
+
       if (docSnap.exists()) {
         const data = docSnap.data();
         
@@ -78,22 +98,29 @@ export function useFirebaseSync(
           }
         }
         
+        hasInitialLoadCompleted.current = true;
         setSyncStatus('saved');
       } else {
         // Document doesn't exist yet on firestore, let's push local data as the starting state
+        hasInitialLoadCompleted.current = true;
         pushLocalToCloud(user.uid, studentsRef.current, programsRef.current);
       }
     }, (error) => {
       console.error('Firestore listener error:', error);
+      setIsConnectionBlocked(true);
+      clearTimeout(timeoutId);
       setSyncStatus('error');
     });
 
-    return unsubscribe;
+    return () => {
+      clearTimeout(timeoutId);
+      unsubscribe();
+    };
   }, [user]);
 
   // Push changes to cloud whenever students or programs change (de-bounced)
   useEffect(() => {
-    if (!user) return;
+    if (!user || !hasInitialLoadCompleted.current) return;
 
     // Check if the current state is identical to our last cloud transaction
     const currentStudentsStr = JSON.stringify(students);
@@ -185,9 +212,10 @@ export function useFirebaseSync(
     setSyncStatus('syncing');
     const provider = new GoogleAuthProvider();
     try {
-      const cred = await signInWithPopup(auth, provider);
-      // Wait a moment and then push current local data to starting state if needed
-      await pushLocalToCloud(cred.user.uid, studentsRef.current, programsRef.current);
+      await signInWithPopup(auth, provider);
+      // We don't call pushLocalToCloud here. Instead, our onSnapshot listener in useEffect
+      // will trigger. If the firebase document exists, it loads the existing user's data.
+      // If it doesn't exist, it safely initializes the state. This protects "изменения в гугле" from overwrites.
     } catch (err: any) {
       console.error('Google Sign-in error:', err);
       if (err.code === 'auth/popup-blocked') {
@@ -219,5 +247,6 @@ export function useFirebaseSync(
     handleSignUp,
     handleGoogleSignIn,
     handleSignOut,
+    isConnectionBlocked,
   };
 }

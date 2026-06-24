@@ -17,6 +17,14 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
   const [programName, setProgramName] = useState('');
   const [programTopicsText, setProgramTopicsText] = useState('');
 
+  const [customConfirm, setCustomConfirm] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const handleKtpFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -33,6 +41,7 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
     setIsAddingNew(false);
     setProgramName(prog.name);
     setProgramTopicsText(prog.topics.join('\n'));
+    setErrorMessage(null);
   };
 
   const handleStartAddNew = () => {
@@ -40,23 +49,28 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
     setIsAddingNew(true);
     setProgramName('');
     setProgramTopicsText('');
+    setErrorMessage(null);
   };
 
   const handleDeleteProgram = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm('Вы действительно хотите удалить эту учебную программу? ' +
-                       'Это действие не повлияет на уже назначенные курсы учеников, но удалит её из шаблонов.')) {
-      const updated = programs.filter(p => p.id !== id);
-      onSavePrograms(updated);
-      if (selectedProgram?.id === id) {
-        setSelectedProgram(null);
+    setCustomConfirm({
+      title: 'Удаление учебной программы',
+      message: 'Вы действительно хотите удалить эту учебную программу? Это действие не повлияет на уже назначенные курсы учеников, но удалит её из шаблонов.',
+      onConfirm: () => {
+        const updated = programs.filter(p => p.id !== id);
+        onSavePrograms(updated);
+        if (selectedProgram?.id === id) {
+          setSelectedProgram(null);
+        }
+        setCustomConfirm(null);
       }
-    }
+    });
   };
 
   const handleSave = () => {
     if (!programName.trim()) {
-      alert('Пожалуйста, заполните название программы.');
+      setErrorMessage('Пожалуйста, заполните название программы.');
       return;
     }
 
@@ -66,9 +80,11 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
       .filter(Boolean);
 
     if (topicsArr.length === 0) {
-      alert('Пожалуйста, введите хотя бы одну тему программы.');
+      setErrorMessage('Пожалуйста, введите хотя бы одну тему программы.');
       return;
     }
+
+    setErrorMessage(null);
 
     if (isAddingNew) {
       const newProg: SyllabusProgram = {
@@ -185,6 +201,13 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
                     </h3>
                   </div>
 
+                  {errorMessage && (
+                    <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-xl p-3 text-xs flex items-center justify-between">
+                      <span>{errorMessage}</span>
+                      <button type="button" onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-white font-bold ml-2">×</button>
+                    </div>
+                  )}
+
                   {/* Program name input */}
                   <div>
                     <label className="block text-[9px] uppercase tracking-widest font-extrabold text-white/45 mb-1.5">
@@ -234,14 +257,15 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
                         type="button"
                         onClick={() => {
                           if (!programTopicsText.trim()) {
-                            alert('Пожалуйста, введите текст или загрузите файл перед очисткой.');
+                            setErrorMessage('Пожалуйста, введите текст или загрузите файл перед очисткой.');
                             return;
                           }
                           const cleaned = parseRawKtpText(programTopicsText);
                           if (cleaned.length === 0) {
-                            alert('Пожалуйста, внесите непустой текст.');
+                            setErrorMessage('Пожалуйста, внесите непустой текст.');
                             return;
                           }
+                          setErrorMessage(null);
                           setProgramTopicsText(cleaned.join('\n'));
                         }}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-lavender/10 hover:bg-lavender/20 active:scale-95 text-[#C3B4FC] border border-lavender/25 text-[9px] font-bold uppercase tracking-widest rounded-xl transition cursor-pointer"
@@ -264,6 +288,7 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
                     onClick={() => {
                       setSelectedProgram(null);
                       setIsAddingNew(false);
+                      setErrorMessage(null);
                     }}
                     className="px-4 py-2 border border-white/5 text-white/50 hover:text-white hover:bg-white/5 text-[10px] tracking-widest uppercase font-bold transition rounded-xl"
                   >
@@ -291,6 +316,36 @@ export function ProgramManagerModal({ programs, onSavePrograms, onClose }: Progr
 
         </div>
       </div>
+
+      {/* Custom Confirm Modal overlay */}
+      {customConfirm && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#12131a] w-full max-w-sm border border-white/10 shadow-2xl rounded-2xl overflow-hidden text-left p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-sm font-extrabold text-[#F4B5CD] uppercase tracking-wider">{customConfirm.title}</h3>
+              <p className="text-xs text-white/70 mt-3 leading-relaxed">{customConfirm.message}</p>
+            </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setCustomConfirm(null)}
+                className="flex-1 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  customConfirm.onConfirm();
+                }}
+                className="flex-1 py-2 px-4 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/40 text-[#F4B5CD] hover:text-[#F4B5CD] rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Подтвердить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

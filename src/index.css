@@ -1,20 +1,11 @@
-@font-face {
-  font-family: "Belepotan";
-  src: url("https://db.onlinewebfonts.com/t/29df99bfa52994e6bf765668efb343cb.woff2") format("woff2"),
-       url("https://db.onlinewebfonts.com/t/29df99bfa52994e6bf765668efb343cb.woff") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
 @import "tailwindcss";
 
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @theme {
-  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-display: "Outfit", "Belepotan", sans-serif;
+  --font-display: "Nunito", sans-serif;
   --font-serif: "Cormorant Garamond", Georgia, serif;
   --color-lavender: #C3B4FC;
   --color-lavender-hover: #D2C7FF;

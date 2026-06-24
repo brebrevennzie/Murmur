@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
-import { Student, Lesson, Payment } from '../types';
+import { Student, Lesson, Payment, CalendarReminder } from '../types';
 import { Users, Calendar, AlertCircle, TrendingUp, Clock, ShieldAlert, Check, ArrowRight, Trash2, Edit3, PlusCircle, X, ChevronLeft, ChevronRight, Move } from 'lucide-react';
 
 interface DashboardStatsProps {
   students: Student[];
   onSelectStudent: (studentId: string) => void;
   onUpdateStudents: (updatedStudents: Student[]) => void;
+  reminders: CalendarReminder[];
+  onUpdateReminders: (reminders: CalendarReminder[]) => void;
+  onOpenYearCalendar: () => void;
 }
 
-export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSelectStudent, onUpdateStudents }) => {
+export const DashboardStats: React.FC<DashboardStatsProps> = ({ 
+  students, 
+  onSelectStudent, 
+  onUpdateStudents,
+  reminders,
+  onUpdateReminders,
+  onOpenYearCalendar
+}) => {
   const activeStudents = students.filter(s => s.isActive);
   const totalStudentsCount = activeStudents.length;
 
@@ -81,6 +91,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
 
   // Free Slots Modal state
   const [showFreeSlotsModal, setShowFreeSlotsModal] = useState(false);
+
   const [slotDuration, setSlotDuration] = useState<number>(60);
   const tutorTimezone = 5; // Always UTC+5 (МСК+2) for the teacher
   const [studentTimezone, setStudentTimezone] = useState<number>(3); // UTC+3 (МСК)
@@ -119,6 +130,12 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
     studentId: string;
     duration: number;
     isOneTime: boolean;
+  } | null>(null);
+
+  const [customConfirm, setCustomConfirm] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
   } | null>(null);
 
   // Helper to get week dates dynamically based on current time and offset
@@ -255,16 +272,46 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
       return dayMap[dayText] !== undefined ? dayMap[dayText] : -1;
     }).filter(dayNum => dayNum !== -1);
     
-    // Count occurrences of scheduled days in current month
+    let startDay = 1;
+    if (student.createdAt) {
+      const { year: createdYear, month: createdMonth } = getYearAndMonth(student.createdAt);
+      
+      // If student is created in a future month, they contribute 0 to this month's expected earnings
+      if (createdYear > currentYear || (createdYear === currentYear && createdMonth > currentMonthIdx)) {
+        return sum;
+      }
+      
+      // If student is created in the current month/year, start from the creation day
+      if (createdYear === currentYear && createdMonth === currentMonthIdx) {
+        const parts = student.createdAt.split('-');
+        if (parts.length >= 3) {
+          const dayPart = parseInt(parts[2], 10);
+          if (!isNaN(dayPart)) {
+            startDay = dayPart;
+          }
+        }
+      }
+    }
+    
+    // Count occurrences of scheduled days in current month from startDay
     let occurrences = 0;
-    for (let day = 1; day <= lastDayOfMonth.getDate(); day++) {
+    for (let day = startDay; day <= lastDayOfMonth.getDate(); day++) {
       const d = new Date(currentYear, currentMonthIdx, day);
       if (scheduleDays.includes(d.getDay())) {
         occurrences++;
       }
     }
     
-    return sum + (occurrences * student.hourlyRate);
+    // Find any cancelled lessons for this student in the current month
+    const cancelledCount = student.lessons.filter(l => {
+      if (l.status !== 'cancelled') return false;
+      const { year, month } = getYearAndMonth(l.date);
+      return year === currentYear && month === currentMonthIdx;
+    }).length;
+    
+    const netOccurrences = Math.max(0, occurrences - cancelledCount);
+    
+    return sum + (netOccurrences * student.hourlyRate);
   }, 0);
 
   // Unpaid balance alerts (students which have negative balanceLessons or unpaid completed lessons)
@@ -821,33 +868,88 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
       ? `Вы уверены, что хотите отменить этот разовый перенос для ${student.name}? Восстановится обычный слот.`
       : `Вы уверены, что хотите удалить слот "${slotStr}" из расписания ${student.name}?`;
 
-    if (window.confirm(confirmMsg)) {
-      const updated = students.map(s => {
-         if (s.id === studentId) {
-           if (currentIsOneTime) {
-             return {
-               ...s,
-               oneTimeReschedules: s.oneTimeReschedules?.filter(r => r.newSlot !== slotStr) || []
-             };
-           } else {
-             return {
-               ...s,
-               schedule: s.schedule.filter(slot => {
-                 const slotParsed = parseSlot(slot);
-                 const targetParsed = parseSlot(slotStr);
-                 return !(slotParsed.day === targetParsed.day && slotParsed.time === targetParsed.time);
-               })
-             };
+    setCustomConfirm({
+      title: currentIsOneTime ? 'Отмена переноса' : 'Удаление слота',
+      message: confirmMsg,
+      onConfirm: () => {
+        const updated = students.map(s => {
+           if (s.id === studentId) {
+             if (currentIsOneTime) {
+               return {
+                 ...s,
+                 oneTimeReschedules: s.oneTimeReschedules?.filter(r => r.newSlot !== slotStr) || []
+               };
+             } else {
+               return {
+                 ...s,
+                 schedule: s.schedule.filter(slot => {
+                   const slotParsed = parseSlot(slot);
+                   const targetParsed = parseSlot(slotStr);
+                   return !(slotParsed.day === targetParsed.day && slotParsed.time === targetParsed.time);
+                 })
+               };
+             }
            }
-         }
-         return s;
-      });
+           return s;
+        });
 
-      onUpdateStudents(updated);
-      setSuccessMsg(currentIsOneTime ? `Разовый перенос отменен.` : `Слот удален.`);
-      setTimeout(() => setSuccessMsg(''), 2500);
-      setActiveAction(null);
-    }
+        onUpdateStudents(updated);
+        setSuccessMsg(currentIsOneTime ? `Разовый перенос отменен.` : `Слот удален.`);
+        setTimeout(() => setSuccessMsg(''), 2500);
+        setActiveAction(null);
+        setCustomConfirm(null);
+      }
+    });
+  };
+
+  const handleDeleteLessonCompletely = (studentId: string, time: string, dateStr: string, isOneTime: boolean, fullSlot: string) => {
+    const student = students.find(s => s.id === studentId);
+    if (!student) return;
+
+    setCustomConfirm({
+      title: 'Удаление урока',
+      message: `Вы уверены, что хотите полностью удалить этот урок у ${student.name} (${dateStr} в ${time})? Он будет удален из сетки расписания и истории занятий.`,
+      onConfirm: () => {
+        const updated = students.map(s => {
+          if (s.id === studentId) {
+            const lessonToDelete = s.lessons.find(l => l.date === dateStr && l.time === time);
+            let refundBalance = 0;
+            if (lessonToDelete && (lessonToDelete.status === 'attended' || lessonToDelete.status === 'missed_unexcused')) {
+              refundBalance = 1;
+            }
+            const filteredLessons = s.lessons.filter(l => !(l.date === dateStr && l.time === time));
+
+            let updatedSchedule = s.schedule;
+            let updatedOneTimeReschedules = s.oneTimeReschedules || [];
+
+            if (isOneTime) {
+              updatedOneTimeReschedules = updatedOneTimeReschedules.filter(r => !(r.date === dateStr && parseSlot(r.newSlot).time === time));
+            } else {
+              updatedSchedule = s.schedule.filter(slot => {
+                const slotParsed = parseSlot(slot);
+                const targetParsed = parseSlot(fullSlot);
+                return !(slotParsed.day === targetParsed.day && slotParsed.time === targetParsed.time);
+              });
+            }
+
+            return {
+              ...s,
+              lessons: filteredLessons,
+              schedule: updatedSchedule,
+              oneTimeReschedules: updatedOneTimeReschedules,
+              balanceLessons: s.balanceLessons + refundBalance
+            };
+          }
+          return s;
+        });
+
+        onUpdateStudents(updated);
+        setSuccessMsg(`Урок полностью удален.`);
+        setTimeout(() => setSuccessMsg(''), 2500);
+        setActiveAction(null);
+        setCustomConfirm(null);
+      }
+    });
   };
 
   // Drag and Drop implementation
@@ -1083,6 +1185,13 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
               Сетка расписания
             </h3>
             <button
+              onClick={onOpenYearCalendar}
+              className="p-1.5 bg-white/[0.03] hover:bg-[#F4B5CD]/10 border border-white/5 hover:border-[#F4B5CD]/30 text-white/40 hover:text-[#F4B5CD] rounded-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer"
+              title="Интерактивный календарь на год"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+            </button>
+            <button
               onClick={() => {
                 setShowFreeSlotsModal(true);
                 setCopiedFreeSlots(false);
@@ -1272,14 +1381,14 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
                                     // Conducted and paid: transparent (прозрачные)
                                     return 'bg-transparent border-white/10 text-white/40 hover:bg-white/[0.03] hover:border-white/20';
                                   } else {
-                                    // Conducted but unpaid: purple (фиолетовые)
-                                    return 'bg-[#C3B4FC]/12 border-[#C3B4FC]/45 text-[#C3B4FC] hover:bg-[#C3B4FC]/22 hover:border-[#C3B4FC] shadow-[0_0_12px_rgba(195,180,252,0.06)]';
+                                    // Conducted but unpaid: pink (розовые)
+                                    return 'bg-[#E598B8]/12 border-[#E598B8]/45 text-[#F4B5CD] hover:bg-[#E598B8]/20 hover:border-[#E598B8] shadow-[0_0_12px_rgba(229,152,184,0.06)]';
                                   }
                                 } else {
-                                  // Planned: pink (розовые)
+                                  // Planned: lilac/purple (сиреневые)
                                   return les.isOneTime 
-                                    ? 'bg-[#E598B8]/12 border-dashed border-[#E598B8]/60 text-[#F4B5CD] hover:bg-[#E598B8]/20 hover:border-[#E598B8]'
-                                    : 'bg-[#E598B8]/12 border-[#E598B8]/45 text-[#F4B5CD] hover:bg-[#E598B8]/20 hover:border-[#E598B8] shadow-[0_0_12px_rgba(229,152,184,0.06)]';
+                                    ? 'bg-[#C3B4FC]/12 border-dashed border-[#C3B4FC]/60 text-[#C3B4FC] hover:bg-[#C3B4FC]/22 hover:border-[#C3B4FC]'
+                                    : 'bg-[#C3B4FC]/12 border-[#C3B4FC]/45 text-[#C3B4FC] hover:bg-[#C3B4FC]/22 hover:border-[#C3B4FC] shadow-[0_0_12px_rgba(195,180,252,0.06)]';
                                 }
                               })()}`}
                               style={{ 
@@ -1348,10 +1457,10 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
         {/* Drop helper legend */}
         <div className="mt-4 pt-3 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-[10px] text-white/40">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="w-2 h-2 rounded bg-[#E598B8]" />
-            <span>Запланирован (розовый)</span>
-            <span className="w-2 h-2 rounded bg-[#C3B4FC] ml-2" />
-            <span>Проведен но не оплачен (фиолетовый)</span>
+            <span className="w-2 h-2 rounded bg-[#C3B4FC]" />
+            <span>Запланирован (сиреневый)</span>
+            <span className="w-2 h-2 rounded bg-[#E598B8] ml-2" />
+            <span>Проведен но не оплачен (розовый)</span>
             <span className="w-2 h-2 rounded bg-transparent border border-white/30 ml-2" />
             <span>Проведен и оплачен (прозрачный)</span>
             <span className="w-2 h-2 rounded bg-rose-500/60 ml-2" />
@@ -1615,6 +1724,21 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleDeleteLessonCompletely(
+                    activeAction.studentId,
+                    activeAction.time,
+                    activeAction.dateStr || '',
+                    activeAction.isOneTime,
+                    activeAction.fullSlot
+                  )}
+                  className="py-2.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl text-[10px] uppercase tracking-widest transition cursor-pointer text-center font-medium flex items-center justify-center gap-1.5"
+                  title="Полностью удалить этот урок"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Удалить</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setActiveAction(null)}
                   className="py-2.5 px-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white/55 hover:text-white rounded-xl text-[10px] uppercase tracking-widest transition cursor-pointer text-center font-medium"
                 >
@@ -1625,6 +1749,36 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ students, onSele
           </div>
         );
       })()}
+
+      {/* CUSTOM CONFIRM MODAL DIALOG */}
+      {customConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#12131a] w-full max-w-sm border border-white/10 shadow-2xl rounded-2xl overflow-hidden text-left p-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-[#F4B5CD] uppercase tracking-wider">{customConfirm.title}</h3>
+              <p className="text-xs text-white/70 mt-3 leading-relaxed">{customConfirm.message}</p>
+            </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setCustomConfirm(null)}
+                className="flex-1 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  customConfirm.onConfirm();
+                }}
+                className="flex-1 py-2 px-4 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/40 text-[#F4B5CD] hover:text-[#F4B5CD] rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Подтвердить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CONFIRM DRAG DROP RESCHEDULE MODAL (supports both one-time vs permanent choices) */}
       {dropConfirmState && (

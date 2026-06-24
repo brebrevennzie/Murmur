@@ -12,6 +12,7 @@ interface FirebaseSyncModalProps {
   onSignUp: (email: string, pass: string) => Promise<void>;
   onGoogleSignIn: () => Promise<void>;
   onSignOut: () => Promise<void>;
+  isConnectionBlocked?: boolean;
 }
 
 export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
@@ -24,6 +25,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   onSignUp,
   onGoogleSignIn,
   onSignOut,
+  isConnectionBlocked = false,
 }) => {
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [email, setEmail] = useState('');
@@ -65,6 +67,14 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   };
 
   const getStatusBadge = () => {
+    if (isConnectionBlocked) {
+      return (
+        <div className="flex items-center gap-1.5 text-orange-400 bg-orange-500/10 border border-orange-500/25 px-2.5 py-1 rounded-full text-[10px] font-mono select-none animate-pulse">
+          <AlertCircle className="w-3 h-3 text-orange-400" />
+          РФ БЛОК / ВЫ ОФЛАЙН
+        </div>
+      );
+    }
     switch (syncStatus) {
       case 'syncing':
         return (
@@ -128,6 +138,41 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Safari / Apple Iframe Environment Alert */}
+        {(typeof navigator !== 'undefined' && (/^((?!chrome|android).)*safari/i.test(navigator.userAgent) || (typeof window !== 'undefined' && window.self !== window.top))) && (
+          <div className="mt-4 p-3.5 bg-indigo-500/10 border border-indigo-500/20 text-[#C3B4FC]/90 text-xs rounded-xl space-y-1.5 relative z-10 font-sans">
+            <div className="flex items-center gap-1.5 font-bold font-mono text-[10px] uppercase tracking-wide text-indigo-300">
+              <Shield className="w-3.5 h-3.5 text-indigo-300" />
+              ОСОБЕННОСТИ ДЛЯ SAFARI / APPLE
+            </div>
+            <p className="text-[11px] leading-normal text-white/70">
+              Браузер Safari по умолчанию блокирует синхронизацию базы данных Google/Firebase внутри встроенных фреймов из-за настроек конфиденциальности.
+            </p>
+            <div className="text-[10px] space-y-1 leading-normal text-indigo-200/80">
+              <div>• <strong>Решение 1:</strong> Откройте сайт <a href={typeof window !== 'undefined' ? window.location.origin : '#'} target="_blank" rel="noopener noreferrer" className="underline font-bold text-white hover:text-[#F4B5CD]" onClick={() => onClose()}>в новой независимой вкладке</a> (кнопка открытия вверху справа).</div>
+              <div>• <strong>Решение 2:</strong> Или отключите опцию <strong>«Без перекрестного отслеживания»</strong> в настройках вашего Safari на телефоне/компьютере.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Connection block warning */}
+        {isConnectionBlocked && (
+          <div className="mt-4 p-3.5 bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs rounded-xl space-y-2 relative z-10 font-sans">
+            <div className="flex items-center gap-1.5 font-bold font-mono text-[10px] uppercase tracking-wide text-orange-400">
+              <AlertCircle className="w-4 h-4 text-orange-400 shrink-0" />
+              БЛОКИРОВКА СЕРВЕРОВ GOOGLE В РФ
+            </div>
+            <p className="text-[11px] leading-relaxed text-white/90">
+              Обнаружен сбой соединения с базой данных Google Firebase.
+            </p>
+            <div className="text-[10px] space-y-1.5 leading-relaxed text-white/70">
+              <div>• 💻 <strong>На ноутбуке (с VPN/прокси):</strong> всё синхронизируется без проблем, база данных обновляется в облаке.</div>
+              <div>• 🖥️ <strong>На ПК (без VPN/прокси):</strong> браузер не может достучаться до серверов Google. Из-за этого изменения не загружаются и не отправляются.</div>
+              <div>• 🔧 <strong>Решение:</strong> Чтобы синхронизация заработала, включите VPN или рабочий прокси <strong>на каждом из устройств</strong>.</div>
+            </div>
+          </div>
+        )}
 
         {/* Error messaging */}
         {authError && (

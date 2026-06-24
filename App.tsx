@@ -49,6 +49,7 @@ export default function App() {
     handleSignUp,
     handleGoogleSignIn,
     handleSignOut,
+    isConnectionBlocked,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
 
   // Load students and programs on start
@@ -234,17 +235,21 @@ export default function App() {
             onClick={() => setShowSyncModal(true)}
             className={`px-3 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
               user 
-                ? syncStatus === 'saved'
-                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20'
-                  : syncStatus === 'syncing'
-                    ? 'bg-amber-500/10 border-amber-500/25 text-amber-300 hover:bg-amber-500/20'
-                    : 'bg-rose-500/10 border-rose-500/25 text-rose-300 hover:bg-rose-500/20 animate-pulse'
+                ? isConnectionBlocked
+                  ? 'bg-orange-500/10 border-orange-500/25 text-orange-300 hover:bg-orange-500/20'
+                  : syncStatus === 'saved'
+                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20'
+                    : syncStatus === 'syncing'
+                      ? 'bg-amber-500/10 border-amber-500/25 text-amber-300 hover:bg-amber-500/20'
+                      : 'bg-rose-500/10 border-rose-500/25 text-rose-300 hover:bg-rose-500/20 animate-pulse'
                 : 'bg-[#F4B5CD]/10 border-[#F4B5CD]/20 text-[#F4B5CD] hover:bg-[#F4B5CD]/20 hover:border-[#F4B5CD]/40'
             }`}
-            title={user ? `Облако синхронизировано (${user.email})` : "Включить синхронизацию во всех браузерах"}
+            title={user ? (isConnectionBlocked ? 'Облако заблокировано (нет прокси/VPN)' : `Облако синхронизировано (${user.email})`) : "Включить синхронизацию во всех браузерах"}
           >
             {user ? (
-              syncStatus === 'syncing' ? (
+              isConnectionBlocked ? (
+                <CloudOff className="w-3 h-3 text-orange-400 shrink-0" />
+              ) : syncStatus === 'syncing' ? (
                 <RefreshCw className="w-3 h-3 animate-spin text-amber-400 shrink-0" />
               ) : (
                 <Cloud className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -254,11 +259,13 @@ export default function App() {
             )}
             <span className="hidden sm:inline">
               {user 
-                ? syncStatus === 'saved' 
-                  ? 'облако: ок' 
-                  : syncStatus === 'syncing'
-                    ? 'синхронизация'
-                    : 'ошибка sync' 
+                ? isConnectionBlocked
+                  ? 'Блокировка РФ?'
+                  : syncStatus === 'saved' 
+                    ? 'облако: ок' 
+                    : syncStatus === 'syncing'
+                      ? 'синхронизация'
+                      : 'ошибка sync' 
                 : 'Сохранить в облако'}
             </span>
           </button>
@@ -573,6 +580,7 @@ export default function App() {
           onGoogleSignIn={handleGoogleSignIn}
           onSignOut={handleSignOut}
           onClose={() => setShowSyncModal(false)}
+          isConnectionBlocked={isConnectionBlocked}
         />
       )}
     </div>

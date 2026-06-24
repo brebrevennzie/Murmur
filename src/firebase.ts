@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfigLocal from '../firebase-applet-config.json';
 
 // Use environment variables if present, fallback to the auto-generated config
@@ -19,5 +19,7 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 
-// Use the database id specified in the config if present
-export const db = getFirestore(app, firebaseConfigLocal.firestoreDatabaseId || undefined);
+// Use initializeFirestore with experimentalForceLongPolling to bypass ISP/network/VPN WebSocket blocks (e.g. in Russia/RF)
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfigLocal.firestoreDatabaseId || undefined);

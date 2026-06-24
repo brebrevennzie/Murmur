@@ -94,3 +94,10 @@ export interface SyllabusProgram {
   name: string;
   topics: string[];
 }
+
+export interface CalendarReminder {
+  id: string;
+  date: string; // YYYY-MM-DD
+  text: string;
+}
+

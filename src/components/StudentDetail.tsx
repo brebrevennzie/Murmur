@@ -19,6 +19,35 @@ interface StudentDetailProps {
 
 type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments';
 
+const formatDateToDDMMYY = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const year = parts[0].substring(2); // last 2 digits of the year
+  const month = parts[1];
+  const day = parts[2];
+  return `${day}.${month}.${year}`;
+};
+
+const isLessonRescheduledOrExtra = (lesson: Lesson, student: Student): boolean => {
+  if (!lesson.date || !lesson.time) return false;
+  
+  const dateObj = new Date(lesson.date);
+  if (isNaN(dateObj.getTime())) return false;
+  
+  const ruWeekdays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  const dayName = ruWeekdays[dateObj.getDay()];
+  
+  const cleanedLessonTime = lesson.time.trim();
+  
+  const matchesRegularSchedule = student.schedule.some(slot => {
+    const slotPart = slot.toLowerCase();
+    return slotPart.includes(dayName.toLowerCase()) && slotPart.includes(cleanedLessonTime);
+  });
+  
+  return !matchesRegularSchedule;
+};
+
 export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, onUpdateStudent }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
@@ -107,6 +136,12 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
     status: 'new' as TopicGap['status'],
     notes: ''
   });
+
+  const [customConfirm, setCustomConfirm] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Calculate stats
   const totalMocks = student.mockExams.length;
@@ -215,12 +250,17 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
 
   // REMOVE MOCK TEST
   const handleDeleteMock = (mockId: string) => {
-    if (window.confirm('Удалить этот результат пробника?')) {
-      onUpdateStudent({
-        ...student,
-        mockExams: student.mockExams.filter(m => m.id !== mockId)
-      });
-    }
+    setCustomConfirm({
+      title: 'Удаление пробника',
+      message: 'Вы уверены, что хотите удалить этот результат пробника?',
+      onConfirm: () => {
+        onUpdateStudent({
+          ...student,
+          mockExams: student.mockExams.filter(m => m.id !== mockId)
+        });
+        setCustomConfirm(null);
+      }
+    });
   };
 
   // ADD LESSON entry
@@ -276,18 +316,23 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
 
   // DELETE LESSON
   const handleDeleteLesson = (lessonId: string, lessonStatus: Lesson['status']) => {
-    if (window.confirm('Вы действительно хотите удалить эту запись о занятии?')) {
-      // Re-add balance if it was deducted
-      let refundBalance = 0;
-      if (lessonStatus === 'attended' || lessonStatus === 'missed_unexcused') {
-        refundBalance = 1;
+    setCustomConfirm({
+      title: 'Удаление записи урока',
+      message: 'Вы действительно хотите удалить эту запись о занятии?',
+      onConfirm: () => {
+        // Re-add balance if it was deducted
+        let refundBalance = 0;
+        if (lessonStatus === 'attended' || lessonStatus === 'missed_unexcused') {
+          refundBalance = 1;
+        }
+        onUpdateStudent({
+          ...student,
+          lessons: student.lessons.filter(l => l.id !== lessonId),
+          balanceLessons: student.balanceLessons + refundBalance
+        });
+        setCustomConfirm(null);
       }
-      onUpdateStudent({
-        ...student,
-        lessons: student.lessons.filter(l => l.id !== lessonId),
-        balanceLessons: student.balanceLessons + refundBalance
-      });
-    }
+    });
   };
 
   // ADD PAYMENT
@@ -326,13 +371,18 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
 
   // DELETE PAYMENT
   const handleDeletePayment = (paymentId: string, lessonsRefund: number) => {
-    if (window.confirm('Откатить этот платёж? Баланс уроков также уменьшится.')) {
-      onUpdateStudent({
-        ...student,
-        payments: student.payments.filter(p => p.id !== paymentId),
-        balanceLessons: student.balanceLessons - lessonsRefund
-      });
-    }
+    setCustomConfirm({
+      title: 'Откат платежа',
+      message: 'Откатить этот платёж? Баланс уроков также уменьшится.',
+      onConfirm: () => {
+        onUpdateStudent({
+          ...student,
+          payments: student.payments.filter(p => p.id !== paymentId),
+          balanceLessons: student.balanceLessons - lessonsRefund
+        });
+        setCustomConfirm(null);
+      }
+    });
   };
 
   // ADD TOPIC GAP
@@ -727,12 +777,17 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             {student.program && (
               <button
                 onClick={() => {
-                  if (confirm("Вы уверены, что хотите сбросить КТП программу для этого ученика?")) {
-                    onUpdateStudent({
-                      ...student,
-                      program: undefined
-                    });
-                  }
+                  setCustomConfirm({
+                    title: 'Сброс КТП',
+                    message: 'Вы уверены, что хотите сбросить КТП программу для этого ученика?',
+                    onConfirm: () => {
+                      onUpdateStudent({
+                        ...student,
+                        program: undefined
+                      });
+                      setCustomConfirm(null);
+                    }
+                  });
                 }}
                 className="text-[9px] uppercase font-mono tracking-wider text-rose-450 hover:text-rose-400 border border-rose-500/10 hover:border-rose-500/20 px-2 py-0.5 rounded-lg transition shrink-0 cursor-pointer"
               >
@@ -1244,8 +1299,13 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono font-bold text-white/70 bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg text-[10px]">
-                              {lesson.date} {lesson.time ? `в ${lesson.time}` : ''}
+                              {formatDateToDDMMYY(lesson.date)} {lesson.time ? `в ${lesson.time}` : ''}
                             </span>
+                            {isLessonRescheduledOrExtra(lesson, student) && (
+                              <span className="px-2 py-0.5 text-[8px] uppercase tracking-wider font-extrabold rounded-lg border bg-[#E598B8]/15 text-[#E598B8] border-[#E598B8]/25" title="Занятие было проведено вне регулярного расписания">
+                                Перенос / Доп
+                              </span>
+                            )}
                             <span className={`px-2 py-0.5 text-[8px] uppercase tracking-wider font-bold rounded-lg border ${
                               lesson.status === 'attended' 
                                 ? 'bg-lavender/10 text-lavender border border-lavender/15' 
@@ -1767,8 +1827,13 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono font-bold text-white/70 flex items-center gap-1 bg-white/5 border border-white/10 px-2 py-0.5 text-xs select-none rounded-xl">
                               <Calendar className="w-3.5 h-3.5 text-[#F4B5CD] inline" />
-                              {lesson.date} {lesson.time && `в ${lesson.time}`}
+                              {formatDateToDDMMYY(lesson.date)} {lesson.time && `в ${lesson.time}`}
                             </span>
+                            {isLessonRescheduledOrExtra(lesson, student) && (
+                              <span className="px-2 py-0.5 text-[8px] uppercase tracking-wider font-extrabold rounded-xl border bg-[#E598B8]/15 text-[#E598B8] border-[#E598B8]/25" title="Занятие было проведено вне регулярного расписания">
+                                Перенос / Доп
+                              </span>
+                            )}
                             <span className={`px-2 py-0.5 text-[9px] uppercase tracking-wider font-semibold rounded-xl ${
                               lesson.status === 'attended' 
                                 ? 'bg-lavender/10 text-lavender border border-lavender/15' 
@@ -2216,6 +2281,35 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
           student={student} 
           onClose={() => setShowParentReport(false)} 
         />
+      )}
+
+      {customConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#12131a] w-full max-w-sm border border-white/10 shadow-2xl rounded-2xl overflow-hidden text-left p-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-[#F4B5CD] uppercase tracking-wider">{customConfirm.title}</h3>
+              <p className="text-xs text-white/70 mt-3 leading-relaxed">{customConfirm.message}</p>
+            </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setCustomConfirm(null)}
+                className="flex-1 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  customConfirm.onConfirm();
+                }}
+                className="flex-1 py-2 px-4 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/40 text-[#F4B5CD] hover:text-[#F4B5CD] rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Подтвердить
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SyllabusProgram } from './types';
+import { Student, SyllabusProgram, CalendarReminder } from './types';
 import { getInitialStudents, saveStudents, INITIAL_STUDENTS, getInitialPrograms, savePrograms } from './data';
 import { syncAllStudents } from './utils/paymentSync';
 import { safeStorage } from './utils/safeStorage';
@@ -14,12 +14,70 @@ import { useFirebaseSync } from './hooks/useFirebaseSync';
 import { 
   Plus, GraduationCap, Grid, SlidersHorizontal, 
   HelpCircle, RefreshCw, AlertCircle, BookOpen, Layers,
-  Calendar, FileText, Cloud, CloudOff
+  Calendar, FileText, Cloud, CloudOff, Award, ClipboardList,
+  ChevronLeft, ChevronRight, X, Trash2
 } from 'lucide-react';
+import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 
 export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  
+  // Quick Notes state
+  const [quickNotes, setQuickNotes] = useState<string>(() => localStorage.getItem('quick_notes') || '');
+  
+  // Interactive Calendar Reminders
+  const [reminders, setReminders] = useState<CalendarReminder[]>(() => {
+    try {
+      const stored = localStorage.getItem('calendar_reminders');
+      if (stored) {
+        const parsed = JSON.parse(stored) as CalendarReminder[];
+        const todayStr = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+        // Auto-delete expired reminders (passed target date)
+        const filtered = parsed.filter(item => item.date >= todayStr);
+        if (filtered.length !== parsed.length) {
+          localStorage.setItem('calendar_reminders', JSON.stringify(filtered));
+        }
+        return filtered;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  const activeReminders = useMemo(() => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const todayTime = today.getTime();
+    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000;
+
+    return reminders.filter(r => {
+      const remDate = new Date(r.date);
+      remDate.setHours(0,0,0,0);
+      const remTime = remDate.getTime();
+      
+      const startTime = remTime - twoDaysInMs;
+      // Active for 2 days before and including target date
+      return todayTime >= startTime && todayTime <= remTime;
+    });
+  }, [reminders]);
+
+  const handleUpdateReminders = (updated: CalendarReminder[]) => {
+    setReminders(updated);
+    localStorage.setItem('calendar_reminders', JSON.stringify(updated));
+  };
+
+  const handleDeleteReminder = (id: string) => {
+    const updated = reminders.filter(r => r.id !== id);
+    handleUpdateReminders(updated);
+  };
+
+  // Interactive Year Calendar with Reminders
+  const [showYearCalendar, setShowYearCalendar] = useState(false);
+  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
+  const [calendarReminderText, setCalendarReminderText] = useState('');
   
   // Filter state
   const [selectedSubject, setSelectedSubject] = useState('all');
@@ -34,10 +92,18 @@ export default function App() {
   // Modal open trigger
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showGradingModal, setShowGradingModal] = useState(false);
 
   const [syllabusPrograms, setSyllabusPrograms] = useState<SyllabusProgram[]>([]);
   const [showProgramManager, setShowProgramManager] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [isReminderDismissed, setIsReminderDismissed] = useState(false);
+
+  const [customConfirm, setCustomConfirm] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const {
     user,
@@ -49,6 +115,7 @@ export default function App() {
     handleSignUp,
     handleGoogleSignIn,
     handleSignOut,
+    isConnectionBlocked,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
 
   // Load students and programs on start
@@ -84,11 +151,16 @@ export default function App() {
 
   // Completely delete student cabinet
   const handleDeleteStudent = (studentId: string) => {
-    if (window.confirm('Вы уверены, что хотите безвозвратно удалить личный кабинет этого ученика? Все данные о пробниках, уроках и оплатах будут стерты.')) {
-      const updated = students.filter(s => s.id !== studentId);
-      handleUpdateStudents(updated);
-      setSelectedStudentId(null);
-    }
+    setCustomConfirm({
+      title: 'Удаление кабинета ученика',
+      message: 'Вы уверены, что хотите безвозвратно удалить личный кабинет этого ученика? Все данные о пробниках, уроках и оплатах будут стерты.',
+      onConfirm: () => {
+        const updated = students.filter(s => s.id !== studentId);
+        handleUpdateStudents(updated);
+        setSelectedStudentId(null);
+        setCustomConfirm(null);
+      }
+    });
   };
 
   // Dispatch a quick note to a student's cabinet from the dashboard
@@ -123,12 +195,17 @@ export default function App() {
 
   // Demo Reset helpers
   const handleResetDemoData = () => {
-    if (window.confirm('Сбросить текущие изменения и восстановить демонстрационных учеников? Все ваши изменения будут стерты.')) {
-      safeStorage.removeItem('tutor_students_db');
-      const defaults = getInitialStudents();
-      setStudents(defaults);
-      setSelectedStudentId(null);
-    }
+    setCustomConfirm({
+      title: 'Сброс демо-данных',
+      message: 'Сбросить текущие изменения и восстановить демонстрационных учеников? Все ваши изменения будут стерты.',
+      onConfirm: () => {
+        safeStorage.removeItem('tutor_students_db');
+        const defaults = getInitialStudents();
+        setStudents(defaults);
+        setSelectedStudentId(null);
+        setCustomConfirm(null);
+      }
+    });
   };
 
   // Dynamically extract unique subjects for filtering dropdown list
@@ -178,9 +255,30 @@ export default function App() {
       });
   }, [students, selectedSubject, filterDebtOnly, sortBy]);
 
+  // Sunday 18:00 to Monday 10:00 reminder window
+  const showSundayReminder = useMemo(() => {
+    const now = new Date();
+    const day = now.getDay(); // 0 is Sunday, 1 is Monday
+    const hours = now.getHours();
+    if (day === 0) {
+      return hours >= 18;
+    }
+    if (day === 1) {
+      return hours < 10;
+    }
+    return false;
+  }, []);
+
   return (
     <div className="bg-[#0b0c11] min-h-screen text-[#E2E8F0] font-sans">
       
+      {/* Top micro motivational banner */}
+      <div className="bg-gradient-to-r from-[#12131a] via-[#1c1421] to-[#12131a] border-b border-white/[0.03] text-center py-1.5 px-4 text-[10px] tracking-[0.25em] text-[#F4B5CD]/30 uppercase select-none font-medium flex items-center justify-center gap-2">
+        <span>✦</span>
+        <span>Кто сдох, тот лох</span>
+        <span>✦</span>
+      </div>
+
       {/* Universal Global Header Banner Navigation */}
       <nav className="h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-8 bg-[#12131a] sticky top-0 z-40">
         <div className="flex items-center gap-4 md:gap-8 overflow-x-auto no-scrollbar">
@@ -234,17 +332,21 @@ export default function App() {
             onClick={() => setShowSyncModal(true)}
             className={`px-3 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
               user 
-                ? syncStatus === 'saved'
-                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20'
-                  : syncStatus === 'syncing'
-                    ? 'bg-amber-500/10 border-amber-500/25 text-amber-300 hover:bg-amber-500/20'
-                    : 'bg-rose-500/10 border-rose-500/25 text-rose-300 hover:bg-rose-500/20 animate-pulse'
+                ? isConnectionBlocked
+                  ? 'bg-orange-500/10 border-orange-500/25 text-orange-300 hover:bg-orange-500/20'
+                  : syncStatus === 'saved'
+                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20'
+                    : syncStatus === 'syncing'
+                      ? 'bg-amber-500/10 border-amber-500/25 text-amber-300 hover:bg-amber-500/20'
+                      : 'bg-rose-500/10 border-rose-500/25 text-rose-300 hover:bg-rose-500/20 animate-pulse'
                 : 'bg-[#F4B5CD]/10 border-[#F4B5CD]/20 text-[#F4B5CD] hover:bg-[#F4B5CD]/20 hover:border-[#F4B5CD]/40'
             }`}
-            title={user ? `Облако синхронизировано (${user.email})` : "Включить синхронизацию во всех браузерах"}
+            title={user ? (isConnectionBlocked ? 'Облако заблокировано (нет прокси/VPN)' : `Облако синхронизировано (${user.email})`) : "Включить синхронизацию во всех браузерах"}
           >
             {user ? (
-              syncStatus === 'syncing' ? (
+              isConnectionBlocked ? (
+                <CloudOff className="w-3 h-3 text-orange-400 shrink-0" />
+              ) : syncStatus === 'syncing' ? (
                 <RefreshCw className="w-3 h-3 animate-spin text-amber-400 shrink-0" />
               ) : (
                 <Cloud className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -254,11 +356,13 @@ export default function App() {
             )}
             <span className="hidden sm:inline">
               {user 
-                ? syncStatus === 'saved' 
-                  ? 'облако: ок' 
-                  : syncStatus === 'syncing'
-                    ? 'синхронизация'
-                    : 'ошибка sync' 
+                ? isConnectionBlocked
+                  ? 'Блокировка РФ?'
+                  : syncStatus === 'saved' 
+                    ? 'облако: ок' 
+                    : syncStatus === 'syncing'
+                      ? 'синхронизация'
+                      : 'ошибка sync' 
                 : 'Сохранить в облако'}
             </span>
           </button>
@@ -303,47 +407,221 @@ export default function App() {
         /* Home Workspace view */
         <div className="animate-fadeIn opacity-90 text-white/85">
           
-          <div className="bg-white/[0.01] backdrop-blur-sm text-[#E2E8F0]/80 py-10 px-6 border-b border-white/5 relative">
+          <div className="bg-white/[0.01] backdrop-blur-sm text-[#E2E8F0]/80 py-8 px-6 border-b border-white/5 relative">
             <div className="absolute inset-0 bg-radial-at-t from-[#F4B5CD]/5 via-transparent to-transparent opacity-60 pointer-events-none" />
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
-              <div className="space-y-2">
-                <h1 className="text-xs md:text-xs font-sans uppercase text-lavender/30 tracking-[0.3em] hover:text-lavender/60 transition duration-300 select-none">Кто сдох, тот лох</h1>
+            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10 items-stretch">
+              
+              {/* Left Column: Quick Notes / Todo Desk & Active Pink Reminders */}
+              <div className="lg:col-span-8 flex flex-col sm:flex-row items-stretch gap-6">
+                
+                {/* Note desk */}
+                <div className="flex flex-col space-y-2 shrink-0">
+                  <div className="flex items-center gap-2 text-[10px] md:text-xs font-sans uppercase text-[#F4B5CD] tracking-widest font-extrabold animate-pulse">
+                    <ClipboardList className="w-3.5 h-3.5 text-[#F4B5CD]" />
+                    <span>НИКУСЬКА НЕ ЗАБУДЬ!!!!</span>
+                  </div>
+                  <div className="relative group">
+                    <textarea
+                      value={quickNotes}
+                      spellCheck="false"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (val && !val.startsWith('•')) {
+                          val = '• ' + val;
+                        }
+                        setQuickNotes(val);
+                        localStorage.setItem('quick_notes', val);
+                      }}
+                      onBlur={() => {
+                        const cleaned = quickNotes
+                          .split('\n')
+                          .map(line => line.trim())
+                          .filter(line => line !== '•' && line !== '• ' && line !== '')
+                          .map(line => line.startsWith('•') ? line : `• ${line}`)
+                          .join('\n');
+                        setQuickNotes(cleaned);
+                        localStorage.setItem('quick_notes', cleaned);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const textarea = e.currentTarget;
+                          const start = textarea.selectionStart;
+                          const end = textarea.selectionEnd;
+                          const val = textarea.value;
+
+                          const before = val.substring(0, start);
+                          const after = val.substring(end);
+
+                          const linesBefore = before.split('\n');
+                          const currentLine = linesBefore[linesBefore.length - 1];
+
+                          if (currentLine.trim() === '•') {
+                            const newBefore = linesBefore.slice(0, -1).join('\n') + '\n';
+                            const newVal = newBefore + after;
+                            setQuickNotes(newVal);
+                            localStorage.setItem('quick_notes', newVal);
+                            setTimeout(() => {
+                              textarea.selectionStart = textarea.selectionEnd = newBefore.length;
+                            }, 0);
+                            return;
+                          }
+
+                          const insertText = '\n• ';
+                          const newVal = before + insertText + after;
+                          setQuickNotes(newVal);
+                          localStorage.setItem('quick_notes', newVal);
+
+                          setTimeout(() => {
+                            textarea.selectionStart = textarea.selectionEnd = start + insertText.length;
+                          }, 0);
+                        }
+                      }}
+                      placeholder="Впишите сюда важные дела, напоминания..."
+                      className="w-48 h-48 bg-[#12131a]/40 hover:bg-[#12131a]/60 focus:bg-[#12131a]/80 border border-white/10 hover:border-white/15 focus:border-[#F4B5CD]/40 text-white/60 placeholder-white/20 text-xs rounded-xl p-3 focus:outline-none focus:ring-1 focus:ring-[#F4B5CD]/20 transition duration-200 resize-none font-sans leading-relaxed text-left"
+                    />
+                  </div>
+                </div>
+
+                {/* Active Pink Reminders List */}
+                <div className="flex-1 flex flex-col space-y-2 min-w-0">
+                  <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-sans uppercase text-[#F4B5CD]/60 tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#F4B5CD] animate-pulse" />
+                    <span>ПЛАНЫ ПЛАНЫ ПЛАНЫ</span>
+                  </div>
+                  
+                  <div className="bg-[#12131a]/30 border border-white/5 rounded-2xl p-4 flex-1 flex flex-col justify-center min-h-[192px]">
+                    {activeReminders.length === 0 ? (
+                      <div className="text-center text-[11px] text-white/20 italic">
+                        Ближайших дел и пробников нет. Нажмите 📅 в Сетке расписания, чтобы спланировать!
+                      </div>
+                    ) : (
+                      <div className="space-y-2 overflow-y-auto no-scrollbar max-h-[160px] pr-1">
+                        {activeReminders.map(rem => {
+                          const dateObj = new Date(rem.date);
+                          const formatted = dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+                          return (
+                            <div key={rem.id} className="bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 p-2.5 rounded-xl flex items-start justify-between gap-3 text-left animate-fadeIn">
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] font-mono font-bold text-[#F4B5CD] uppercase tracking-wider block">
+                                  {formatted}
+                                </span>
+                                <p className="text-xs text-[#F4B5CD] font-medium leading-relaxed">{rem.text}</p>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteReminder(rem.id)}
+                                className="text-[#F4B5CD]/40 hover:text-[#F4B5CD] p-0.5 text-sm leading-none transition cursor-pointer"
+                                title="Удалить напоминание"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
               </div>
 
-              {/* Action buttons list */}
-              <div className="shrink-0 flex flex-wrap gap-2">
-                <button
-                  onClick={() => setShowProgramManager(true)}
-                  className="py-2 px-4 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/10 hover:border-[#F4B5CD]/30 text-[#F4B5CD]/80 text-[10px] uppercase font-extrabold tracking-[0.12em] transition duration-200 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer backdrop-blur-md active:scale-95 shadow-sm"
-                >
-                  <FileText className="w-3.5 h-3.5 text-[#F4B5CD]/70" />
-                  Управление программами КТП
-                </button>
-                <button
-                  onClick={() => setShowImportModal(true)}
-                  className="py-2 px-4 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/10 hover:border-white/20 text-white/70 text-[10px] uppercase font-extrabold tracking-[0.12em] rounded-lg transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer backdrop-blur-md active:scale-95 shadow-sm"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-[#F4B5CD]/50" />
-                  Загрузить расписание
-                </button>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="py-2 px-4 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/10 hover:border-[#F4B5CD]/30 text-[#F4B5CD]/80 text-[10px] uppercase font-extrabold tracking-[0.12em] transition duration-200 rounded-lg flex items-center justify-center gap-1 cursor-pointer backdrop-blur-md active:scale-95 shadow-sm"
-                >
-                  Зарегистрировать ученика
-                </button>
+              {/* Right Column: Fast actions */}
+              <div className="lg:col-span-4 flex flex-col justify-between gap-3">
+                <div className="flex items-center gap-2 text-[10px] md:text-xs font-sans uppercase text-white/50 tracking-wider">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-[#C3B4FC]" />
+                  <span>Быстрые действия</span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 flex-1 items-stretch">
+                  <button
+                    onClick={() => setShowGradingModal(true)}
+                    className="py-1.5 px-3 bg-[#C3B4FC]/5 hover:bg-[#C3B4FC]/15 border border-[#C3B4FC]/15 hover:border-[#C3B4FC]/30 text-[#C3B4FC] text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
+                  >
+                    <Award className="w-3.5 h-3.5 text-[#C3B4FC]/80 shrink-0" />
+                    <span>Баллы</span>
+                  </button>
+                  <button
+                    onClick={() => setShowProgramManager(true)}
+                    className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-[#F4B5CD]/20 text-[#F4B5CD]/80 text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-[#F4B5CD]/70 shrink-0" />
+                    <span>КТП</span>
+                  </button>
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 text-white/70 text-[10px] uppercase font-bold tracking-wider rounded-lg transition duration-200 flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                    <span>Расписание</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-[#F4B5CD]/20 text-[#F4B5CD]/80 text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#F4B5CD]/70 shrink-0" />
+                    <span>Новый ученик</span>
+                  </button>
+                </div>
               </div>
+
             </div>
           </div>
 
           {/* Main workspace widgets */}
           <main className="max-w-7xl mx-auto px-4 md:px-8 py-8 space-y-8">
             
+            {showSundayReminder && !isReminderDismissed && (
+              <div className="relative overflow-hidden bg-gradient-to-r from-[#C3B4FC]/8 via-transparent to-[#F4B5CD]/8 border border-[#C3B4FC]/25 rounded-2xl p-5 md:p-6 shadow-xl animate-fadeIn backdrop-blur-md">
+                <div className="absolute top-1 right-1 p-3 flex items-center gap-3">
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#F4B5CD] opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#F4B5CD]"></span>
+                  </span>
+                  <button 
+                    onClick={() => setIsReminderDismissed(true)}
+                    className="text-white/40 hover:text-white transition text-xs p-1 cursor-pointer"
+                    title="Скрыть напоминание"
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row items-start gap-4 pr-10">
+                  <div className="w-10 h-10 rounded-xl bg-[#C3B4FC]/15 border border-[#C3B4FC]/20 flex items-center justify-center text-lg shrink-0">
+                    📜
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium text-white tracking-wide">
+                      ✨ Напоминание: Время отправить отчеты родителям
+                    </h3>
+                    <p className="text-xs text-[#ccd3de]/70 leading-relaxed max-w-3xl">
+                      Порадуйте родителей успехами детей за прошедшую неделю! Откройте карточку любого ученика и нажмите кнопку <strong className="text-white">«Отчет родителям»</strong>, чтобы выбрать и отправить красивый космический, классический или стальной отчет.
+                    </p>
+                    <div className="pt-3">
+                      <button
+                        onClick={() => {
+                          document.getElementById('students-catalog')?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="px-4 py-2 bg-[#C3B4FC]/15 hover:bg-[#C3B4FC]/25 active:scale-[0.98] border border-[#C3B4FC]/30 text-[#C3B4FC] text-[10px] uppercase tracking-wider font-semibold rounded-lg transition duration-200 cursor-pointer"
+                      >
+                        Перейти к списку учеников
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {/* Global dashboard stats counters and schedule planner widget */}
             <DashboardStats 
               students={students} 
               onSelectStudent={(id) => setSelectedStudentId(id)}
               onUpdateStudents={handleUpdateStudents}
+              reminders={reminders}
+              onUpdateReminders={handleUpdateReminders}
+              onOpenYearCalendar={() => setShowYearCalendar(true)}
             />
 
             {/* Quick Post-Lesson Note Board (BEZ AI) */}
@@ -573,7 +851,302 @@ export default function App() {
           onGoogleSignIn={handleGoogleSignIn}
           onSignOut={handleSignOut}
           onClose={() => setShowSyncModal(false)}
+          isConnectionBlocked={isConnectionBlocked}
         />
+      )}
+
+      {/* Grading Criteria overlay Modal */}
+      <GradingCriteriaModal 
+        isOpen={showGradingModal}
+        onClose={() => setShowGradingModal(false)}
+      />
+
+      {/* Year Calendar Modal with Reminders */}
+      {showYearCalendar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fadeIn" onClick={() => setShowYearCalendar(false)}>
+          <div 
+            className="relative w-full max-w-6xl max-h-[90vh] bg-[#0c0d12]/95 border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#12131a]/40">
+              <div className="flex items-center gap-3">
+                <Calendar className="w-5 h-5 text-[#F4B5CD]" />
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#F4B5CD] tracking-widest uppercase">
+                    Интерактивный Календарь на {calendarYear} год
+                  </h3>
+                  <p className="text-[10px] text-white/40">Нажмите на любой день, чтобы добавить, изменить или удалить важное напоминание</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCalendarYear(prev => prev - 1)}
+                  className="p-1.5 bg-white/[0.02] hover:bg-white/[0.08] border border-white/5 rounded-lg text-white/60 hover:text-white transition cursor-pointer"
+                  title="Предыдущий год"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs font-mono font-bold text-white/80 px-2">{calendarYear}</span>
+                <button
+                  onClick={() => setCalendarYear(prev => prev + 1)}
+                  className="p-1.5 bg-white/[0.02] hover:bg-white/[0.08] border border-white/5 rounded-lg text-white/60 hover:text-white transition cursor-pointer"
+                  title="Следующий год"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setShowYearCalendar(false)}
+                  className="ml-4 p-1.5 bg-white/[0.02] hover:bg-white/[0.08] border border-white/5 rounded-lg text-white/40 hover:text-white transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* 12 Months Grid */}
+            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 no-scrollbar bg-[#0a0b0e]">
+              {Array.from({ length: 12 }).map((_, monthIndex) => {
+                const monthName = [
+                  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+                  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+                ][monthIndex];
+                const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                
+                // Calculate days for the month
+                const firstDay = new Date(calendarYear, monthIndex, 1);
+                const dayOfWeek = firstDay.getDay(); 
+                const startOffset = (dayOfWeek + 6) % 7; 
+                const daysInMonth = new Date(calendarYear, monthIndex + 1, 0).getDate();
+                
+                const days: { dayNum: number | null; dateStr: string }[] = [];
+                for (let i = 0; i < startOffset; i++) {
+                  days.push({ dayNum: null, dateStr: '' });
+                }
+                for (let d = 1; d <= daysInMonth; d++) {
+                  const mm = String(monthIndex + 1).padStart(2, '0');
+                  const dd = String(d).padStart(2, '0');
+                  const dateStr = `${calendarYear}-${mm}-${dd}`;
+                  days.push({ dayNum: d, dateStr });
+                }
+
+                return (
+                  <div key={monthIndex} className="bg-[#12131a]/30 border border-white/5 rounded-xl p-3 flex flex-col hover:border-white/10 transition-colors">
+                    <h4 className="text-[11px] font-extrabold text-[#C3B4FC] tracking-wider uppercase mb-2 text-center">
+                      {monthName}
+                    </h4>
+                    
+                    {/* Weekday headers */}
+                    <div className="grid grid-cols-7 gap-1 text-center mb-1">
+                      {weekdays.map(wd => (
+                        <span key={wd} className="text-[8px] font-mono text-white/30 font-semibold">{wd}</span>
+                      ))}
+                    </div>
+
+                    {/* Days grid */}
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {days.map((day, idx) => {
+                        if (day.dayNum === null) {
+                          return <div key={`empty-${idx}`} />;
+                        }
+
+                        // Check if today
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const isToday = day.dateStr === todayStr;
+
+                        // Check if there is an active reminder on this date
+                        const existingReminder = reminders.find(r => r.date === day.dateStr);
+
+                        return (
+                          <button
+                            key={day.dateStr}
+                            onClick={() => {
+                              setSelectedCalendarDate(day.dateStr);
+                              setCalendarReminderText(existingReminder ? existingReminder.text : '');
+                            }}
+                            className={`aspect-square text-[10px] font-mono rounded flex flex-col items-center justify-center relative cursor-pointer transition-all ${
+                              existingReminder 
+                                ? 'bg-[#F4B5CD]/20 text-[#F4B5CD] font-bold border border-[#F4B5CD]/45 hover:bg-[#F4B5CD]/30'
+                                : isToday
+                                  ? 'bg-white/10 text-white font-bold border border-white/25 hover:bg-white/20'
+                                  : 'text-white/60 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            <span>{day.dayNum}</span>
+                            {existingReminder && (
+                              <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-[#F4B5CD] animate-pulse" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer / Close */}
+            <div className="px-6 py-4 border-t border-white/5 bg-[#12131a]/40 flex justify-end">
+              <button
+                onClick={() => setShowYearCalendar(false)}
+                className="px-5 py-2 bg-zinc-900 hover:bg-zinc-800 text-white/60 hover:text-white border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+              >
+                Закрыть календарь
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reminder Edit Modal Overlay */}
+      {selectedCalendarDate && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn" onClick={() => setSelectedCalendarDate(null)}>
+          <div 
+            className="relative w-full max-w-md bg-[#0e1017] border border-white/10 rounded-2xl flex flex-col p-6 shadow-2xl animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/5 mb-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#F4B5CD]" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Напоминание на дату
+                </h4>
+              </div>
+              <button 
+                onClick={() => {
+                  setSelectedCalendarDate(null);
+                  setCalendarReminderText('');
+                }}
+                className="text-white/40 hover:text-white transition cursor-pointer p-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-[#F4B5CD] tracking-widest block mb-1">
+                  Выбранный день
+                </span>
+                <span className="text-sm font-semibold text-white">
+                  {(() => {
+                    try {
+                      const parts = selectedCalendarDate.split('-');
+                      const y = parseInt(parts[0], 10);
+                      const m = parseInt(parts[1], 10) - 1;
+                      const d = parseInt(parts[2], 10);
+                      return new Date(y, m, d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+                    } catch (e) {
+                      return selectedCalendarDate;
+                    }
+                  })()}
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-white/40 tracking-widest block">
+                  Текст дела / напоминания
+                </label>
+                <textarea
+                  value={calendarReminderText}
+                  onChange={(e) => setCalendarReminderText(e.target.value)}
+                  placeholder="Например: Пробник у Юры, созвониться по переносу..."
+                  className="w-full h-24 bg-[#12131a]/60 border border-white/10 focus:border-[#F4B5CD]/50 text-white placeholder-white/20 text-xs rounded-xl p-3 focus:outline-none focus:ring-1 focus:ring-[#F4B5CD]/20 transition duration-200 resize-none font-sans leading-relaxed"
+                  autoFocus
+                  spellCheck="false"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                {reminders.some(r => r.date === selectedCalendarDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = reminders.filter(r => r.date !== selectedCalendarDate);
+                      handleUpdateReminders(updated);
+                      setSelectedCalendarDate(null);
+                      setCalendarReminderText('');
+                    }}
+                    className="flex-1 py-2.5 bg-red-950/20 hover:bg-red-950/45 border border-red-500/30 hover:border-red-500/50 text-red-400 font-bold text-[10px] uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Удалить</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCalendarDate(null);
+                    setCalendarReminderText('');
+                  }}
+                  className="flex-1 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white/50 hover:text-white border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-wider transition text-center cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cleanedText = calendarReminderText.trim();
+                    let updated = [...reminders];
+                    if (!cleanedText) {
+                      updated = reminders.filter(r => r.date !== selectedCalendarDate);
+                    } else {
+                      const existingIndex = reminders.findIndex(r => r.date === selectedCalendarDate);
+                      if (existingIndex > -1) {
+                        updated[existingIndex] = {
+                          ...updated[existingIndex],
+                          text: cleanedText
+                        };
+                      } else {
+                        updated.push({
+                          id: Math.random().toString(36).substring(2, 9),
+                          date: selectedCalendarDate,
+                          text: cleanedText
+                        });
+                      }
+                    }
+                    handleUpdateReminders(updated);
+                    setSelectedCalendarDate(null);
+                    setCalendarReminderText('');
+                  }}
+                  className="flex-[2] py-2.5 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/18 border border-[#F4B5CD]/35 text-[#F4B5CD] font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition cursor-pointer text-center"
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#12131a] w-full max-w-sm border border-white/10 shadow-2xl rounded-2xl overflow-hidden text-left p-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-[#F4B5CD] uppercase tracking-wider">{customConfirm.title}</h3>
+              <p className="text-xs text-white/70 mt-3 leading-relaxed">{customConfirm.message}</p>
+            </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setCustomConfirm(null)}
+                className="flex-1 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  customConfirm.onConfirm();
+                }}
+                className="flex-1 py-2 px-4 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/40 text-[#F4B5CD] hover:text-[#F4B5CD] rounded-xl text-[10px] uppercase tracking-wider font-extrabold transition cursor-pointer text-center"
+              >
+                Подтвердить
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
