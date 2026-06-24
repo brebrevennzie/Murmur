@@ -68,38 +68,65 @@ export function useFirebaseSync(
       setIsConnectionBlocked(false);
       clearTimeout(timeoutId);
 
+      const isDefaultStudentList = (list: Student[]) => {
+        if (!list || list.length === 0) return true;
+        const defaultIds = ['stud-1', 'stud-2', 'stud-3'];
+        return list.every(s => defaultIds.includes(s.id));
+      };
+
       if (docSnap.exists()) {
         const data = docSnap.data();
         
-        if (data.students) {
-          // Synchronize calculations immediately on retrieval from firestore
-          const dbStudents = syncAllStudents(data.students);
-          const dbStudentsStr = JSON.stringify(dbStudents);
-          const localStudentsStr = JSON.stringify(studentsRef.current);
-          
-          lastCloudStudentsRef.current = dbStudentsStr;
-          
-          if (dbStudentsStr !== localStudentsStr) {
-            setStudents(dbStudents);
-            // Also store locally for offline backup
-            safeStorage.setItem('tutor_students_db', dbStudentsStr);
-          }
-        }
+        const dbStudents = data.students ? syncAllStudents(data.students) : [];
+        const localStudents = studentsRef.current;
         
-        if (data.programs) {
-          const dbProgramsStr = JSON.stringify(data.programs);
-          const localProgramsStr = JSON.stringify(programsRef.current);
-          
-          lastCloudProgramsRef.current = dbProgramsStr;
-          
-          if (dbProgramsStr !== localProgramsStr) {
-            setSyllabusPrograms(data.programs);
-            safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
-          }
-        }
+        const isDbDefault = isDefaultStudentList(dbStudents);
+        const isLocalDefault = isDefaultStudentList(localStudents);
         
-        hasInitialLoadCompleted.current = true;
-        setSyncStatus('saved');
+        // Safety check: if local data contains real students but cloud contains only demo students,
+        // we should push local to cloud rather than downloading demo data and overwriting real ones.
+        if (!isLocalDefault && isDbDefault) {
+          hasInitialLoadCompleted.current = true;
+          pushLocalToCloud(user.uid, localStudents, programsRef.current);
+          
+          if (data.programs) {
+            const dbProgramsStr = JSON.stringify(data.programs);
+            const localProgramsStr = JSON.stringify(programsRef.current);
+            lastCloudProgramsRef.current = dbProgramsStr;
+            if (dbProgramsStr !== localProgramsStr) {
+              setSyllabusPrograms(data.programs);
+              safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
+            }
+          }
+        } else {
+          if (data.students) {
+            const dbStudentsStr = JSON.stringify(dbStudents);
+            const localStudentsStr = JSON.stringify(localStudents);
+            
+            lastCloudStudentsRef.current = dbStudentsStr;
+            
+            if (dbStudentsStr !== localStudentsStr) {
+              setStudents(dbStudents);
+              // Also store locally for offline backup
+              safeStorage.setItem('tutor_students_db', dbStudentsStr);
+            }
+          }
+          
+          if (data.programs) {
+            const dbProgramsStr = JSON.stringify(data.programs);
+            const localProgramsStr = JSON.stringify(programsRef.current);
+            
+            lastCloudProgramsRef.current = dbProgramsStr;
+            
+            if (dbProgramsStr !== localProgramsStr) {
+              setSyllabusPrograms(data.programs);
+              safeStorage.setItem('tutor_syllabus_programs', dbProgramsStr);
+            }
+          }
+          
+          hasInitialLoadCompleted.current = true;
+          setSyncStatus('saved');
+        }
       } else {
         // Document doesn't exist yet on firestore, let's push local data as the starting state
         hasInitialLoadCompleted.current = true;
