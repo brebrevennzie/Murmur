@@ -1182,7 +1182,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
           <div className="flex items-center gap-3">
             <h3 className="font-sans text-white text-base flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#F4B5CD]" />
-              Сетка расписания
+              Календарь
             </h3>
             <button
               onClick={onOpenYearCalendar}
@@ -1457,17 +1457,14 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         {/* Drop helper legend */}
         <div className="mt-4 pt-3 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-[10px] text-white/40">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="w-2 h-2 rounded bg-[#C3B4FC]" />
+            <span className="w-2 h-2 rounded bg-[#C3B4FC] opacity-50" />
             <span>Запланирован (сиреневый)</span>
-            <span className="w-2 h-2 rounded bg-[#E598B8] ml-2" />
+            <span className="w-2 h-2 rounded bg-[#E598B8] opacity-50 ml-2" />
             <span>Проведен но не оплачен (розовый)</span>
-            <span className="w-2 h-2 rounded bg-transparent border border-white/30 ml-2" />
+            <span className="w-2 h-2 rounded bg-transparent border border-white/30 opacity-50 ml-2" />
             <span>Проведен и оплачен (прозрачный)</span>
-            <span className="w-2 h-2 rounded bg-rose-500/60 ml-2" />
+            <span className="w-2 h-2 rounded bg-rose-500/60 opacity-50 ml-2" />
             <span>Отменен</span>
-          </div>
-          <div className="font-light">
-            💡 Коснитесь любого слота для управления временем, балансом и выбора длительности (60 или 90 мин).
           </div>
         </div>
       </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Student, MockExam, Lesson, Payment, TopicGap } from '../types';
 import { SvgChart } from './SvgChart';
 import { ParentReportModal } from './ParentReportModal';
+import { PaymentReportModal } from './PaymentReportModal';
 import { parseRawKtpText } from '../utils/scheduleParser';
 import { safeStorage } from '../utils/safeStorage';
 import { 
@@ -52,6 +53,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
   const [showParentReport, setShowParentReport] = useState(false);
+  const [showPaymentReport, setShowPaymentReport] = useState(false);
 
   // Syllabus program states
   const [isSelectingProgram, setIsSelectingProgram] = useState(false);
@@ -481,13 +483,23 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
           Назад к списку
         </button>
 
-        <button 
-          onClick={() => setShowParentReport(true)}
-          className="absolute top-4 right-4 inline-flex items-center gap-1.5 px-3.5 py-2 bg-white/[0.04] hover:bg-white/[0.12] active:bg-white/[0.18] backdrop-blur-xl border border-white/10 text-[10px] uppercase tracking-widest font-extrabold text-[#F4B5CD] transition-all duration-300 rounded-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] hover:shadow-[#F4B5CD]/10 cursor-pointer"
-        >
-          <TrendingUp className="w-3.5 h-3.5 text-[#F4B5CD]" />
-          Общая статистика для родителей 📊
-        </button>
+        <div className="absolute top-4 right-4 flex flex-col sm:flex-row gap-2 items-end sm:items-center">
+          <button 
+            onClick={() => setShowPaymentReport(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 active:bg-[#F4B5CD]/30 backdrop-blur-xl border border-[#F4B5CD]/30 text-[10px] uppercase tracking-widest font-extrabold text-[#F4B5CD] transition-all duration-300 rounded-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Отчет об оплате 🧾
+          </button>
+
+          <button 
+            onClick={() => setShowParentReport(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white/[0.04] hover:bg-white/[0.12] active:bg-white/[0.18] backdrop-blur-xl border border-white/10 text-[10px] uppercase tracking-widest font-extrabold text-[#F4B5CD] transition-all duration-300 rounded-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] hover:shadow-[#F4B5CD]/10 cursor-pointer"
+          >
+            <TrendingUp className="w-3.5 h-3.5 text-[#F4B5CD]" />
+            Общая статистика для родителей 📊
+          </button>
+        </div>
       </div>
 
       <div className="max-w-5xl mx-auto px-4 md:px-6">
@@ -2280,6 +2292,13 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
         <ParentReportModal 
           student={student} 
           onClose={() => setShowParentReport(false)} 
+        />
+      )}
+
+      {showPaymentReport && (
+        <PaymentReportModal 
+          student={student} 
+          onClose={() => setShowPaymentReport(false)} 
         />
       )}
 

@@ -105,6 +105,48 @@ export default function App() {
     onConfirm: () => void;
   } | null>(null);
 
+  const [showPaymentReminder, setShowPaymentReminder] = useState(false);
+
+  useEffect(() => {
+    const checkReminder = () => {
+      const now = new Date();
+      const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const mskPlus2Date = new Date(utcTime + (5 * 3600000));
+      const hours = mskPlus2Date.getHours();
+      
+      const yyyy = mskPlus2Date.getFullYear();
+      const mm = String(mskPlus2Date.getMonth() + 1).padStart(2, '0');
+      const dd = String(mskPlus2Date.getDate()).padStart(2, '0');
+      const dateKey = `${yyyy}-${mm}-${dd}`;
+
+      const isClosedToday = localStorage.getItem(`tutor_payment_reminder_closed_${dateKey}`) === 'true';
+      const isWithinActiveHours = hours >= 21 || hours < 1;
+
+      if (isWithinActiveHours && !isClosedToday) {
+        setShowPaymentReminder(true);
+      } else {
+        setShowPaymentReminder(false);
+      }
+    };
+
+    checkReminder();
+    const interval = setInterval(checkReminder, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleCloseReminder = () => {
+    const now = new Date();
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const mskPlus2Date = new Date(utcTime + (5 * 3600000));
+    const yyyy = mskPlus2Date.getFullYear();
+    const mm = String(mskPlus2Date.getMonth() + 1).padStart(2, '0');
+    const dd = String(mskPlus2Date.getDate()).padStart(2, '0');
+    const dateKey = `${yyyy}-${mm}-${dd}`;
+
+    localStorage.setItem(`tutor_payment_reminder_closed_${dateKey}`, 'true');
+    setShowPaymentReminder(false);
+  };
+
   const {
     user,
     loading: syncLoading,
@@ -700,10 +742,7 @@ export default function App() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] text-white/30 font-light">
-                      {!quickStudentId 
-                        ? 'Выберите ученика слева, чтобы отправить заметку' 
-                        : 'Заметка добавится первой строкой в раздел "Планы и особенности"'
-                      }
+                      {quickStudentId && 'Заметка добавится первой строкой в раздел "Планы и особенности"'}
                     </span>
                     <button
                       type="button"
@@ -1163,6 +1202,28 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showPaymentReminder && (
+        <div className="fixed bottom-6 right-6 z-[250] max-w-sm bg-[#12131a] border border-[#F4B5CD]/40 shadow-[0_8px_32px_rgba(244,181,205,0.15)] p-4 rounded-2xl flex items-center justify-between gap-4 animate-slideUp">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#F4B5CD]/10 flex items-center justify-center border border-[#F4B5CD]/20 text-[#F4B5CD] shrink-0 animate-pulse">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-extrabold text-white uppercase tracking-widest">ОТМЕТЬ ОПЛАТЫ</p>
+              <p className="text-[10px] text-white/50 font-light mt-0.5">Самое время проверить балансы занятий</p>
+            </div>
+          </div>
+          <button 
+            type="button"
+            onClick={handleCloseReminder}
+            className="text-white/40 hover:text-white hover:bg-white/5 p-1 rounded-lg transition-all cursor-pointer"
+            title="Закрыть уведомление"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>
