@@ -136,6 +136,13 @@ export default function App() {
     saveStudents(synced);
   };
 
+  const handleRestoreBackup = (restoredStudents: Student[], restoredPrograms: SyllabusProgram[]) => {
+    handleUpdateStudents(restoredStudents);
+    if (restoredPrograms && restoredPrograms.length > 0) {
+      handleSaveSyllabusPrograms(restoredPrograms);
+    }
+  };
+
   // Add individual student
   const handleAddStudent = (newStudent: Student) => {
     const updated = [...students, newStudent];
@@ -852,6 +859,9 @@ export default function App() {
           onSignOut={handleSignOut}
           onClose={() => setShowSyncModal(false)}
           isConnectionBlocked={isConnectionBlocked}
+          students={students}
+          syllabusPrograms={syllabusPrograms}
+          onRestoreBackup={handleRestoreBackup}
         />
       )}
 

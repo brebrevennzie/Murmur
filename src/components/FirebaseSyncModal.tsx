@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { X, Cloud, CloudOff, Lock, Mail, RefreshCw, AlertCircle, CheckCircle, ArrowRight, LogOut, Shield } from 'lucide-react';
+import { X, Cloud, CloudOff, Lock, Mail, RefreshCw, AlertCircle, CheckCircle, ArrowRight, LogOut, Shield, Download, Upload } from 'lucide-react';
+import { Student, SyllabusProgram } from '../types';
 
 interface FirebaseSyncModalProps {
   user: User | null;
@@ -13,6 +14,9 @@ interface FirebaseSyncModalProps {
   onGoogleSignIn: () => Promise<void>;
   onSignOut: () => Promise<void>;
   isConnectionBlocked?: boolean;
+  students: Student[];
+  syllabusPrograms: SyllabusProgram[];
+  onRestoreBackup: (students: Student[], programs: SyllabusProgram[]) => void;
 }
 
 export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
@@ -26,12 +30,85 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   onGoogleSignIn,
   onSignOut,
   isConnectionBlocked = false,
+  students,
+  syllabusPrograms,
+  onRestoreBackup,
 }) => {
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [localLoading, setLocalLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Backup states
+  const [backupStatus, setBackupStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+
+  const handleDownloadBackup = () => {
+    try {
+      const dataStr = JSON.stringify({
+        students,
+        syllabusPrograms,
+        exportedAt: new Date().toISOString(),
+        version: '1.0'
+      }, null, 2);
+      
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `tutor_backup_${dateStr}.json`;
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setBackupStatus('success');
+      setBackupMessage('Резервная копия скачана! Сохраните этот файл.');
+      setTimeout(() => {
+        setBackupStatus('idle');
+        setBackupMessage(null);
+      }, 5000);
+    } catch (err) {
+      setBackupStatus('error');
+      setBackupMessage('Не удалось создать файл бэкапа.');
+    }
+  };
+
+  const handleUploadBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        
+        if (parsed && Array.isArray(parsed.students)) {
+          onRestoreBackup(parsed.students, parsed.syllabusPrograms || []);
+          setBackupStatus('success');
+          setBackupMessage('Резервная копия успешно восстановлена!');
+          setTimeout(() => {
+            setBackupStatus('idle');
+            setBackupMessage(null);
+          }, 6000);
+        } else {
+          setBackupStatus('error');
+          setBackupMessage('Неверный формат файла. Файл должен содержать список учеников.');
+        }
+      } catch (err) {
+        setBackupStatus('error');
+        setBackupMessage('Ошибка чтения файла. Убедитесь, что это файл .json.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,6 +397,61 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
             </form>
             </div>
           )}
+        </div>
+
+        {/* Offline Backup & Restore Section */}
+        <div className="mt-6 pt-5 border-t border-white/5 relative z-10 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-white/5 rounded-lg text-white/50">
+              <Shield className="w-4 h-4 text-[#F4B5CD]" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold tracking-wider text-white uppercase font-mono">100% Локальный Бэкап (Офлайн)</h4>
+              <p className="text-[10px] text-white/40">Для переноса без VPN, интернета или если сломается устройство</p>
+            </div>
+          </div>
+
+          {backupMessage && (
+            <div className={`p-2.5 rounded-xl text-xs flex items-center gap-2 animate-fadeIn ${
+              backupStatus === 'success' 
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' 
+                : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'
+            }`}>
+              {backupStatus === 'success' ? (
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              )}
+              <span className="leading-tight">{backupMessage}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2.5">
+            {/* Download Button */}
+            <button
+              type="button"
+              onClick={handleDownloadBackup}
+              className="py-2.5 px-3.5 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/8 text-white text-[11px] font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-2 transition duration-200 cursor-pointer text-center"
+            >
+              <Download className="w-3.5 h-3.5 text-[#F4B5CD]" />
+              Скачать файл
+            </button>
+
+            {/* Upload Button */}
+            <label className="py-2.5 px-3.5 rounded-xl border border-[#F4B5CD]/20 hover:border-[#F4B5CD]/35 bg-[#F4B5CD]/5 hover:bg-[#F4B5CD]/8 text-[#F4B5CD] text-[11px] font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-2 transition duration-200 cursor-pointer text-center">
+              <Upload className="w-3.5 h-3.5" />
+              Загрузить файл
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleUploadBackup}
+                className="hidden"
+              />
+            </label>
+          </div>
+          <p className="text-[9px] text-white/30 text-center leading-relaxed">
+            Скачайте резервную копию на ноутбуке, перешлите файл себе на телефон и нажмите «Загрузить файл» — все данные перенесутся мгновенно и без VPN.
+          </p>
         </div>
       </div>
     </div>
