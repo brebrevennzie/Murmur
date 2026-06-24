@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E1B4B" />
+      <stop offset="100%" stop-color="#311042" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F4B5CD" />
+      <stop offset="100%" stop-color="#E2729D" />
+    </linearGradient>
+  </defs>
+  <!-- Rounded Base Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Outer Glow/Ring -->
+  <rect x="24" y="24" width="464" height="464" rx="88" fill="none" stroke="url(#accentGrad)" stroke-width="4" stroke-opacity="0.3" />
+
+  <!-- Graduation Cap & Progress Chart Combined Graphic -->
+  <g transform="translate(4, -10)">
+    <!-- Growing Progress Bars (Chart) -->
+    <!-- Bar 1 -->
+    <rect x="156" y="270" width="36" height="100" rx="10" fill="#F4B5CD" fill-opacity="0.3" />
+    <!-- Bar 2 -->
+    <rect x="216" y="220" width="36" height="150" rx="10" fill="#F4B5CD" fill-opacity="0.6" />
+    <!-- Bar 3 -->
+    <rect x="276" y="160" width="36" height="210" rx="10" fill="url(#accentGrad)" />
+    <!-- Arrow pointing up-right representing progress -->
+    <path d="M 156 320 L 234 230 L 320 160" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 290 160 L 320 160 L 320 190" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Stylized Graduation Cap floating above -->
+    <g transform="translate(256, 120) scale(1.1)">
+      <!-- Cap Diamond -->
+      <path d="M 0 -45 L 75 -15 L 0 15 L -75 -15 Z" fill="url(#accentGrad)" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round" />
+      <!-- Cap Base -->
+      <path d="M -40 2 L -40 25 C -40 35, 40 35, 40 25 L 40 2" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" />
+      <!-- Tassel -->
+      <path d="M 0 -15 L -55 5 L -55 35" fill="none" stroke="#F4B5CD" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Tassel Fringe -->
+      <rect x="-60" y="35" width="10" height="15" rx="2" fill="#F4B5CD" />
+    </g>
+  </g>
+</svg>
