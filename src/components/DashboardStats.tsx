@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Student, Lesson, Payment, CalendarReminder } from '../types';
-import { Users, Calendar, AlertCircle, TrendingUp, Clock, ShieldAlert, Check, ArrowRight, Trash2, Edit3, PlusCircle, X, ChevronLeft, ChevronRight, Move } from 'lucide-react';
+import { Users, Calendar, AlertCircle, TrendingUp, Clock, ShieldAlert, Check, ArrowRight, Trash2, Edit3, PlusCircle, X, ChevronLeft, ChevronRight, Move, Paperclip, Link, FileText, ExternalLink } from 'lucide-react';
 
 interface DashboardStatsProps {
   students: Student[];
@@ -38,7 +38,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     dateStr?: string;
   } | null>(null);
 
-  const [modalHwStatus, setModalHwStatus] = useState<'completed' | 'missed' | 'pending' | 'partially'>('pending');
+  const [modalHwStatus, setModalHwStatus] = useState<Lesson['homeworkStatus']>('pending');
   const [modalKtpStatus, setModalKtpStatus] = useState<'according' | 'deviated' | 'caught_up'>('according');
   const [modalHwReason, setModalHwReason] = useState<string>('');
   const [modalLessonStatus, setModalLessonStatus] = useState<'attended' | 'cancelled' | 'planned'>('planned');
@@ -46,6 +46,11 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
   const [modalGapsIdentified, setModalGapsIdentified] = useState<string>('');
   const [modalCancelReason, setModalCancelReason] = useState<string>('');
   const [modalHomework, setModalHomework] = useState<string>('');
+  const [viewingAttachmentsTopic, setViewingAttachmentsTopic] = useState<{
+    title: string;
+    links?: { name: string; url: string }[];
+    pdfs?: { name: string; url?: string; base64?: string }[];
+  } | null>(null);
 
   const lastInitializedRef = React.useRef<string | null>(null);
 
@@ -571,7 +576,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     dateStr: string,
     status: 'attended' | 'cancelled' | 'planned',
     isPaid: boolean,
-    homeworkStatus: 'completed' | 'partially' | 'missed' | 'pending',
+    homeworkStatus: Lesson['homeworkStatus'],
     homeworkReason: string,
     ktpStatus: 'according' | 'deviated' | 'caught_up',
     gapsIdentified: string,
@@ -594,7 +599,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
             status,
             isPaid,
             homeworkStatus: (status === 'attended' || status === 'planned') ? homeworkStatus : 'pending',
-            homeworkReason: (status === 'attended' || status === 'planned') && (homeworkStatus === 'missed' || homeworkStatus === 'partially') ? homeworkReason : '',
+            homeworkReason: (status === 'attended' || status === 'planned') && (homeworkStatus === 'missed' || homeworkStatus === 'partially' || homeworkStatus === 'ai_assisted') ? homeworkReason : '',
             ktpStatus: (status === 'attended' || status === 'planned') ? ktpStatus : 'according',
             gapsIdentified: (status === 'attended' || status === 'planned') ? gapsIdentified : '',
             reason: status === 'cancelled' ? cancelReason : '',
@@ -609,7 +614,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
             isPaid,
             summary: status === 'attended' ? 'Урок проведен' : (status === 'planned' ? 'Урок запланирован' : 'Урок отменен'),
             homeworkStatus: (status === 'attended' || status === 'planned') ? homeworkStatus : 'pending',
-            homeworkReason: (status === 'attended' || status === 'planned') && (homeworkStatus === 'missed' || homeworkStatus === 'partially') ? homeworkReason : '',
+            homeworkReason: (status === 'attended' || status === 'planned') && (homeworkStatus === 'missed' || homeworkStatus === 'partially' || homeworkStatus === 'ai_assisted') ? homeworkReason : '',
             ktpStatus: (status === 'attended' || status === 'planned') ? ktpStatus : 'according',
             gapsIdentified: (status === 'attended' || status === 'planned') ? gapsIdentified : '',
             reason: status === 'cancelled' ? cancelReason : '',
@@ -1435,6 +1440,22 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                           const studentRef = students.find(s => s.id === les.id);
                           const matchingLesson = studentRef?.lessons.find(l => l.date === les.dateStr && l.time === les.time);
                           const isLessonPaid = matchingLesson?.isPaid === true;
+                          const hasAttachments = (() => {
+                            if (!studentRef || !studentRef.program) return false;
+                            const sortedLessonsForKtp = [...studentRef.lessons]
+                              .filter(l => l.status === 'attended' || l.status === 'planned')
+                              .sort((a, b) => {
+                                const dateTimeA = new Date(a.date + 'T' + (a.time || '00:00')).getTime();
+                                const dateTimeB = new Date(b.date + 'T' + (b.time || '00:00')).getTime();
+                                return dateTimeA - dateTimeB;
+                              });
+                            const lessonIndex = sortedLessonsForKtp.findIndex(l => l.date === les.dateStr && l.time === les.time);
+                            const activeTopics = studentRef.program.topics.filter(x => x.status !== 'skipped');
+                            const topic = (lessonIndex !== -1 && lessonIndex < activeTopics.length)
+                              ? activeTopics[lessonIndex]
+                              : null;
+                            return !!topic && ((topic.links && topic.links.length > 0) || (topic.pdfs && topic.pdfs.length > 0));
+                          })();
 
                           return (
                             <div
@@ -1520,14 +1541,45 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                                 </div>
 
                                 {/* Bottom Row: Time and a subtle Move indicator */}
-                                <div className="flex items-center justify-between mt-auto pt-1 w-full select-none pointer-events-none">
-                                  <span className={`text-[8px] font-bold font-mono px-1 py-0.2 rounded-sm ${
-                                    les.isOneTime 
-                                      ? 'bg-[#E598B8]/20 text-[#E598B8]' 
-                                      : 'bg-[#F4B5CD]/10 text-[#F4B5CD]'
-                                  }`}>
-                                    {les.time}
-                                  </span>
+                                <div className="flex items-center justify-between mt-auto pt-1 w-full select-none">
+                                  <div className="flex items-center gap-1.5 pointer-events-auto">
+                                    <span className={`text-[8px] font-bold font-mono px-1 py-0.2 rounded-sm ${
+                                      les.isOneTime 
+                                        ? 'bg-[#E598B8]/20 text-[#E598B8]' 
+                                        : 'bg-[#F4B5CD]/10 text-[#F4B5CD]'
+                                    }`}>
+                                      {les.time}
+                                    </span>
+                                    {hasAttachments && (() => {
+                                      if (!studentRef || !studentRef.program) return null;
+                                      const sortedLessonsForKtp = [...studentRef.lessons]
+                                        .filter(l => l.status === 'attended' || l.status === 'planned')
+                                        .sort((a, b) => {
+                                          const dateTimeA = new Date(a.date + 'T' + (a.time || '00:00')).getTime();
+                                          const dateTimeB = new Date(b.date + 'T' + (b.time || '00:00')).getTime();
+                                          return dateTimeA - dateTimeB;
+                                        });
+                                      const lessonIndex = sortedLessonsForKtp.findIndex(l => l.date === les.dateStr && l.time === les.time);
+                                      const activeTopics = studentRef.program.topics.filter(x => x.status !== 'skipped');
+                                      const topic = (lessonIndex !== -1 && lessonIndex < activeTopics.length)
+                                        ? activeTopics[lessonIndex]
+                                        : null;
+                                      if (!topic) return null;
+                                      return (
+                                        <button 
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setViewingAttachmentsTopic(topic);
+                                          }}
+                                          className="flex items-center justify-center bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/30 p-0.5 rounded border border-[#F4B5CD]/30 transition active:scale-95 cursor-pointer text-[#F4B5CD]" 
+                                          title="Вложены материалы КТП (PDF, ссылки). Кликните, чтобы открыть."
+                                        >
+                                          <Paperclip className="w-2.5 h-2.5" />
+                                        </button>
+                                      );
+                                    })()}
+                                  </div>
                                   <Move className="w-2.5 h-2.5 text-white/5 group-hover:text-[#F4B5CD]/30 shrink-0" />
                                 </div>
                               </div>
@@ -1601,6 +1653,98 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                   </div>
                 </div>
 
+                {/* Active Topic with attachments */}
+                {(() => {
+                  const student = students.find(s => s.id === activeAction.studentId);
+                  if (!student || !student.program) return null;
+
+                  const sortedLessonsForKtp = [...student.lessons]
+                    .filter(l => l.status === 'attended' || l.status === 'planned')
+                    .sort((a, b) => {
+                      const dateTimeA = new Date(a.date + 'T' + (a.time || '00:00')).getTime();
+                      const dateTimeB = new Date(b.date + 'T' + (b.time || '00:00')).getTime();
+                      return dateTimeA - dateTimeB;
+                    });
+                  const lessonIndex = sortedLessonsForKtp.findIndex(l => l.date === activeAction.dateStr && l.time === activeAction.time);
+                  const activeTopics = student.program.topics.filter(x => x.status !== 'skipped');
+                  const activeTopic = (lessonIndex !== -1 && lessonIndex < activeTopics.length)
+                    ? activeTopics[lessonIndex]
+                    : null;
+                  const nextTopic = (lessonIndex !== -1 && (lessonIndex + 1) < activeTopics.length)
+                    ? activeTopics[lessonIndex + 1]
+                    : null;
+
+                  if (!activeTopic) return null;
+
+                  return (
+                    <div className="space-y-2">
+                      <div className="bg-[#C3B4FC]/5 border border-[#C3B4FC]/20 p-3 rounded-xl space-y-1.5 select-none">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] uppercase tracking-wider text-[#C3B4FC] font-extrabold block font-sans">Тема по КТП (#{lessonIndex + 1}):</span>
+                          <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                            activeTopic.status === 'completed' 
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans' 
+                              : activeTopic.status === 'missed' 
+                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20 font-sans' 
+                                : 'bg-white/5 text-white/50 border border-white/10 font-sans'
+                          }`}>
+                            {activeTopic.status === 'completed' ? 'Пройдена' : activeTopic.status === 'missed' ? 'Не успели' : 'Запланирована'}
+                          </span>
+                        </div>
+                        <span className="text-xs text-white font-medium block leading-snug">{activeTopic.title}</span>
+
+                        {/* Quick links & PDFs */}
+                        {((activeTopic.links && activeTopic.links.length > 0) || (activeTopic.pdfs && activeTopic.pdfs.length > 0)) && (
+                          <div className="pt-1.5 border-t border-white/5 flex flex-wrap gap-1.5">
+                            {activeTopic.links?.map((link, lIdx) => (
+                              <a
+                                key={lIdx}
+                                href={link.url.startsWith('http') ? link.url : `https://${link.url}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#C3B4FC]/10 hover:bg-[#C3B4FC]/20 text-[#C3B4FC] text-[10px] font-medium border border-[#C3B4FC]/20 transition"
+                              >
+                                <Link className="w-3 h-3 text-[#C3B4FC]" />
+                                <span>{link.name}</span>
+                                <ExternalLink className="w-2.5 h-2.5 opacity-60 text-[#C3B4FC]" />
+                              </a>
+                            ))}
+                            {activeTopic.pdfs?.map((pdf, pIdx) => (
+                              <button
+                                key={pIdx}
+                                type="button"
+                                onClick={() => {
+                                  if (pdf.base64) {
+                                    const a = document.createElement('a');
+                                    a.href = pdf.base64;
+                                    a.download = pdf.name;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                  } else if (pdf.url) {
+                                    window.open(pdf.url.startsWith('http') ? pdf.url : `https://${pdf.url}`, '_blank');
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 text-[#F4B5CD] text-[10px] font-medium border border-[#F4B5CD]/20 transition cursor-pointer"
+                              >
+                                <FileText className="w-3 h-3 text-[#F4B5CD]" />
+                                <span>{pdf.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {nextTopic && (
+                        <div className="bg-white/[0.02] border border-white/5 p-2.5 rounded-xl space-y-1 select-none">
+                          <span className="text-[9px] uppercase tracking-wider text-white/40 font-bold block font-sans">Следующая тема (#{lessonIndex + 2}):</span>
+                          <span className="text-xs text-white/70 block leading-snug">{nextTopic.title}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="space-y-3 pt-1">
                    {/* Lesson Status (Planned vs Attended vs Cancelled) */}
                   <div className="space-y-1.5">
@@ -1659,11 +1803,12 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                       {/* Homework status selection */}
                       <div className="bg-white/[0.02] p-3 rounded-xl border border-white/5 space-y-2">
                         <span className="text-white/45 block text-[9px] uppercase tracking-wider font-mono">Домашнее задание к уроку:</span>
-                        <div className="grid grid-cols-2 gap-1.5 font-sans">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 font-sans">
                           {[
                             { k: 'completed', l: 'Сделано' },
                             { k: 'partially', l: 'Частично' },
                             { k: 'missed', l: 'Не сдано' },
+                            { k: 'ai_assisted', l: 'Списано / ИИ' },
                             { k: 'pending', l: 'Не задано' }
                           ].map(hwOpt => (
                             <button
@@ -1682,12 +1827,14 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                         </div>
 
                         {/* Homework failure reason input */}
-                        {(modalHwStatus === 'missed' || modalHwStatus === 'partially') && (
+                        {(modalHwStatus === 'missed' || modalHwStatus === 'partially' || modalHwStatus === 'ai_assisted') && (
                           <div className="space-y-1 mt-2.5 pt-2 border-t border-white/5 select-none animate-fadeIn">
-                            <label className="block text-[8px] uppercase tracking-wider text-blush-mist font-medium">Причина невыполнения ДЗ:</label>
+                            <label className="block text-[8px] uppercase tracking-wider text-blush-mist font-medium">
+                              {modalHwStatus === 'ai_assisted' ? 'Комментарий / Подозрения (для отчета):' : 'Причина невыполнения ДЗ:'}
+                            </label>
                             <input
                               type="text"
-                              placeholder="Например: Не успел, забыл тетрадь, заболел..."
+                              placeholder={modalHwStatus === 'ai_assisted' ? 'Списано слово в слово, ответы сошлись с ГДЗ/ChatGPT...' : 'Например: Не успел, забыл тетрадь, заболел...'}
                               value={modalHwReason}
                               onChange={(e) => setModalHwReason(e.target.value)}
                               className="w-full text-xs px-2.5 py-1.5 bg-black/45 border border-white/10 focus:border-blush-mist focus:outline-none rounded-xl text-white"
@@ -1835,6 +1982,113 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
           </div>
         );
       })()}
+
+      {/* ATTACHMENT MATERIALS VIEW ONLY POPUP MODAL */}
+      {viewingAttachmentsTopic && (
+        <div className="fixed inset-0 z-[190] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#12131a] w-full max-w-md border border-white/10 shadow-2xl rounded-2xl overflow-hidden text-left p-6 space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-5 h-5 text-[#F4B5CD]" />
+                <div>
+                  <h3 className="text-xs font-extrabold text-white uppercase tracking-wider font-sans">Материалы к уроку</h3>
+                  <p className="text-[10px] text-[#F4B5CD] font-medium leading-tight max-w-[280px] truncate" title={viewingAttachmentsTopic.title}>
+                    {viewingAttachmentsTopic.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingAttachmentsTopic(null)}
+                className="p-1 hover:bg-white/5 text-white/40 hover:text-white transition rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Links and PDFs Lists */}
+            <div className="space-y-4 max-h-64 overflow-y-auto pr-1 no-scrollbar pt-1">
+              {/* Links */}
+              {viewingAttachmentsTopic.links && viewingAttachmentsTopic.links.length > 0 ? (
+                <div className="space-y-2">
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-white/40 font-semibold block">Полезные ссылки:</span>
+                  <div className="grid grid-cols-1 gap-2">
+                    {viewingAttachmentsTopic.links.map((link, idx) => (
+                      <a
+                        key={idx}
+                        href={link.url.startsWith('http') ? link.url : `https://${link.url}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-[#C3B4FC]/30 text-xs text-white/80 transition"
+                      >
+                        <div className="flex items-center gap-2 truncate min-w-0">
+                          <Link className="w-4 h-4 text-[#C3B4FC] shrink-0" />
+                          <span className="truncate font-medium">{link.name}</span>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-[#C3B4FC] shrink-0" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* PDFs */}
+              {viewingAttachmentsTopic.pdfs && viewingAttachmentsTopic.pdfs.length > 0 ? (
+                <div className="space-y-2">
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-white/40 font-semibold block">Документы и учебники:</span>
+                  <div className="grid grid-cols-1 gap-2">
+                    {viewingAttachmentsTopic.pdfs.map((pdf, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          if (pdf.base64) {
+                            const a = document.createElement('a');
+                            a.href = pdf.base64;
+                            a.download = pdf.name;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                          } else if (pdf.url) {
+                            window.open(pdf.url.startsWith('http') ? pdf.url : `https://${pdf.url}`, '_blank');
+                          }
+                        }}
+                        className="flex items-center justify-between w-full text-left p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-[#F4B5CD]/35 text-xs text-white/80 transition cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 truncate min-w-0">
+                          <FileText className="w-4 h-4 text-[#F4B5CD] shrink-0" />
+                          <span className="truncate font-medium">{pdf.name}</span>
+                          <span className="text-[8px] text-[#F4B5CD] bg-[#F4B5CD]/10 px-1 rounded font-mono shrink-0">
+                            {pdf.base64 ? 'Файл' : 'URL'}
+                          </span>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-[#F4B5CD] shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {(!viewingAttachmentsTopic.links || viewingAttachmentsTopic.links.length === 0) &&
+               (!viewingAttachmentsTopic.pdfs || viewingAttachmentsTopic.pdfs.length === 0) ? (
+                 <div className="text-center py-6 text-white/45 text-xs">
+                   К данной теме КТП еще не прикреплено никаких материалов.
+                 </div>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setViewingAttachmentsTopic(null)}
+                className="py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/15 text-white hover:text-white rounded-xl text-[10px] uppercase tracking-wider transition cursor-pointer font-bold"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CUSTOM CONFIRM MODAL DIALOG */}
       {customConfirm && (

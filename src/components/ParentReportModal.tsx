@@ -35,6 +35,7 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
   const totalHW = lessonsWithHomework.length;
   const hwCompleted = lessonsWithHomework.filter(l => l.homeworkStatus === 'completed').length;
   const hwPartially = lessonsWithHomework.filter(l => l.homeworkStatus === 'partially').length;
+  const hwAiAssisted = lessonsWithHomework.filter(l => l.homeworkStatus === 'ai_assisted').length;
 
   // Check if there is KTP deviation (lag)
   const ktpLagCount = Math.max(0, student.lessons.filter(l => l.ktpStatus === 'deviated').length - student.lessons.filter(l => l.ktpStatus === 'caught_up').length);
@@ -58,7 +59,7 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
 
   const incompleteLessons = student.lessons.filter(l => 
     l.status === 'attended' && 
-    (l.homeworkStatus === 'missed' || l.homeworkStatus === 'partially')
+    (l.homeworkStatus === 'missed' || l.homeworkStatus === 'partially' || l.homeworkStatus === 'ai_assisted')
   );
 
   return (
@@ -331,6 +332,7 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                     </h4>
                     <p className="text-xs sm:text-sm font-light text-[#C3B4FC]/80 leading-normal">
                       Выполнено домашних работ: <strong className="text-slate-150 font-sans font-light text-sm sm:text-base">{hwCompleted + hwPartially} из {totalHW}</strong>
+                      {hwAiAssisted > 0 && <span className="text-xs text-red-400 block mt-1">⚠️ Выявлено работ со списыванием / ИИ: <strong className="text-white font-bold">{hwAiAssisted}</strong></span>}
                     </p>
                   </>
                 )}
@@ -343,6 +345,7 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                     </h4>
                     <p className="text-xs sm:text-sm font-light text-stone-700 leading-normal">
                       Сдано домашних работ: <strong className="text-stone-900 font-sans font-medium text-sm sm:text-base">{hwCompleted + hwPartially} из {totalHW}</strong>
+                      {hwAiAssisted > 0 && <span className="text-xs text-red-650 block mt-1 font-sans font-medium">⚠️ Подозрение на использование нейросетей / ИИ: <strong className="text-red-700 font-bold">{hwAiAssisted} раз(а)</strong></span>}
                     </p>
                   </>
                 )}
@@ -355,10 +358,11 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                     </h4>
                     <p className="text-xs sm:text-sm font-light text-slate-300 leading-normal">
                       Сдано домашних работ: <strong className="text-slate-100 font-sans font-medium text-sm sm:text-base">{hwCompleted + hwPartially} из {totalHW}</strong>
+                      {hwAiAssisted > 0 && <span className="text-xs text-rose-500 block mt-1">⚠️ Работ сделано через нейросети / списано: <strong className="text-rose-400 font-bold">{hwAiAssisted}</strong></span>}
                     </p>
                   </>
                 )}
-  
+
                 {incompleteLessons.length > 0 && (
                   <div className={`mt-3 pt-3 border-t space-y-2 ${
                     reportStyle === 'cosmic'
@@ -374,9 +378,9 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                           ? 'text-stone-700 font-sans'
                           : 'text-slate-400 font-sans'
                     }`}>
-                      {reportStyle === 'cosmic' && "Причины недовыполнения ДЗ:"}
-                      {reportStyle === 'classic' && "Сведения о невыполненных домашних работах:"}
-                      {reportStyle === 'patsan' && "Сведения о невыполненных домашних работах:"}
+                      {reportStyle === 'cosmic' && "Причины недовыполнения ДЗ и замечания:"}
+                      {reportStyle === 'classic' && "Сведения о невыполненных или списанных домашних работах:"}
+                      {reportStyle === 'patsan' && "Сведения о невыполненных или списанных домашних работах:"}
                     </p>
                     <div className="space-y-1.5">
                       {incompleteLessons.map((l) => (
@@ -394,8 +398,8 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                             {reportStyle === 'cosmic' && (
                               <>
                                 <span className="text-[#ccd3de]/50">Урок {new Date(l.date).toLocaleDateString('ru-RU')}</span>
-                                <span className={l.homeworkStatus === 'missed' ? 'text-[#D4B2B6] font-light uppercase text-[8px]' : 'text-[#C3B4FC]/70 font-light uppercase text-[8px]'}>
-                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : 'Частично'}
+                                <span className={l.homeworkStatus === 'missed' ? 'text-[#D4B2B6] font-light uppercase text-[8px]' : l.homeworkStatus === 'ai_assisted' ? 'text-red-400 font-bold uppercase text-[8px] animate-pulse' : 'text-[#C3B4FC]/70 font-light uppercase text-[8px]'}>
+                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : l.homeworkStatus === 'ai_assisted' ? '⚠️ Списано / Нейросеть' : 'Частично'}
                                 </span>
                               </>
                             )}
@@ -403,8 +407,8 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                             {reportStyle === 'classic' && (
                               <>
                                 <span className="text-stone-500">Задание от {new Date(l.date).toLocaleDateString('ru-RU')}</span>
-                                <span className={`font-sans font-medium uppercase text-[8px] ${l.homeworkStatus === 'missed' ? 'text-stone-400' : 'text-stone-600'}`}>
-                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : 'Частично'}
+                                <span className={`font-sans font-medium uppercase text-[8px] ${l.homeworkStatus === 'missed' ? 'text-stone-400' : l.homeworkStatus === 'ai_assisted' ? 'text-red-600 font-bold' : 'text-stone-600'}`}>
+                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : l.homeworkStatus === 'ai_assisted' ? '⚠️ Списано / ИИ' : 'Частично'}
                                 </span>
                               </>
                             )}
@@ -412,8 +416,8 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                             {reportStyle === 'patsan' && (
                               <>
                                 <span className="text-slate-500">Задание от {new Date(l.date).toLocaleDateString('ru-RU')}</span>
-                                <span className={`font-sans font-medium uppercase text-[8px] ${l.homeworkStatus === 'missed' ? 'text-slate-400' : 'text-blue-400'}`}>
-                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : 'Частично'}
+                                <span className={`font-sans font-medium uppercase text-[8px] ${l.homeworkStatus === 'missed' ? 'text-slate-400' : l.homeworkStatus === 'ai_assisted' ? 'text-rose-500 font-bold' : 'text-blue-400'}`}>
+                                  {l.homeworkStatus === 'missed' ? 'Не сдано' : l.homeworkStatus === 'ai_assisted' ? '⚠️ Списано / ИИ' : 'Частично'}
                                 </span>
                               </>
                             )}
@@ -432,20 +436,20 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
                           <p className="text-[11px] leading-normal">
                             {reportStyle === 'cosmic' && (
                               <>
-                                <span className="text-[#ccd3de]/40 font-light">Причина:</span>{' '}
-                                <span className="text-[#D4B2B6] font-light italic">{l.homeworkReason || 'Причина не указана'}</span>
+                                <span className="text-[#ccd3de]/40 font-light">{l.homeworkStatus === 'ai_assisted' ? 'Комментарий:' : 'Причина:'}</span>{' '}
+                                <span className="text-[#D4B2B6] font-light italic">{l.homeworkReason || (l.homeworkStatus === 'ai_assisted' ? 'Вызывает сильные подозрения в использовании нейросетей/списывания' : 'Причина не указана')}</span>
                               </>
                             )}
                             {reportStyle === 'classic' && (
                               <>
-                                <span className="text-stone-500 font-light">Причина невыполнения:</span>{' '}
-                                <span className="text-stone-600 font-medium italic">{l.homeworkReason || 'Не указана'}</span>
+                                <span className="text-stone-500 font-light">{l.homeworkStatus === 'ai_assisted' ? 'Комментарий преподавателя:' : 'Причина невыполнения:'}</span>{' '}
+                                <span className="text-stone-600 font-medium italic">{l.homeworkReason || (l.homeworkStatus === 'ai_assisted' ? 'Вызывает сильные подозрения в использовании нейросетей/списывания' : 'Не указана')}</span>
                               </>
                             )}
                             {reportStyle === 'patsan' && (
                               <>
-                                <span className="text-slate-500 font-light">Причина невыполнения:</span>{' '}
-                                <span className="text-slate-400 font-medium italic">{l.homeworkReason || 'Не указана'}</span>
+                                <span className="text-slate-500 font-light">{l.homeworkStatus === 'ai_assisted' ? 'Комментарий:' : 'Причина невыполнения:'}</span>{' '}
+                                <span className="text-slate-400 font-medium italic">{l.homeworkReason || (l.homeworkStatus === 'ai_assisted' ? 'Подозрение на использование ChatGPT / ИИ' : 'Не указана')}</span>
                               </>
                             )}
                           </p>

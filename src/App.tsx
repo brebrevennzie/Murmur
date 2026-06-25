@@ -348,8 +348,129 @@ export default function App() {
       </div>
 
       {/* Universal Global Header Banner Navigation */}
-      <nav className="h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-8 bg-[#12131a] sticky top-0 z-40">
-        <div className="flex items-center gap-4 md:gap-8 overflow-x-auto no-scrollbar">
+      <nav className="h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-8 bg-[#12131a] sticky top-0 z-40 relative overflow-hidden">
+        {/* Beautiful vector pink snake */}
+        <div className="absolute inset-0 flex items-center justify-end pr-0 pointer-events-none select-none z-0 opacity-35">
+          <svg className="h-14 w-[850px] text-[#F4B5CD] filter drop-shadow-[0_0_15px_rgba(244,181,205,0.45)] translate-x-[10px] md:translate-x-[20px]" viewBox="0 0 900 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="snakeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#F4B5CD" />
+                <stop offset="30%" stopColor="#D8B4FE" />
+                <stop offset="65%" stopColor="#C3B4FC" />
+                <stop offset="100%" stopColor="#F5D0FE" />
+              </linearGradient>
+              <pattern id="scales" width="12" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(20)">
+                <path d="M 0 3 L 6 0 L 12 3 L 6 6 Z" fill="none" stroke="#F4B5CD" strokeWidth="0.5" strokeOpacity="0.45" />
+              </pattern>
+            </defs>
+            
+            <g>
+              {/* Layer 1: Outer glowing neon silhouette/edges (wide pink stroke) */}
+              <path 
+                d="M 70,42 C 100,42 120,20 140,20 C 160,20 170,35 170,45 C 170,55 155,65 145,55 C 135,45 145,25 175,25 C 210,25 230,58 250,58 C 270,58 280,40 280,30 C 280,20 265,10 255,20 C 245,30 255,50 285,50 C 320,50 340,18 360,18 C 380,18 390,32 390,42 C 390,52 375,62 365,52 C 355,42 365,22 395,22 C 430,22 450,58 470,58 C 490,58 500,40 500,30 C 500,20 485,10 475,20 C 465,30 475,50 505,50 C 540,50 560,18 580,18 C 600,18 610,32 610,42 C 610,52 595,62 585,52 C 575,42 585,22 615,22 C 650,22 670,58 690,58 C 710,58 720,40 720,30 C 720,20 705,10 695,20 C 685,30 695,50 725,50 C 760,50 780,40 810,40"
+                stroke="url(#snakeGrad)"
+                strokeWidth="13"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                opacity="0.85"
+              />
+
+              {/* Layer 2: Mask core with background color to form a clean double-contour outline */}
+              <path 
+                d="M 70,42 C 100,42 120,20 140,20 C 160,20 170,35 170,45 C 170,55 155,65 145,55 C 135,45 145,25 175,25 C 210,25 230,58 250,58 C 270,58 280,40 280,30 C 280,20 265,10 255,20 C 245,30 255,50 285,50 C 320,50 340,18 360,18 C 380,18 390,32 390,42 C 390,52 375,62 365,52 C 355,42 365,22 395,22 C 430,22 450,58 470,58 C 490,58 500,40 500,30 C 500,20 485,10 475,20 C 465,30 475,50 505,50 C 540,50 560,18 580,18 C 600,18 610,32 610,42 C 610,52 595,62 585,52 C 575,42 585,22 615,22 C 650,22 670,58 690,58 C 710,58 720,40 720,30 C 720,20 705,10 695,20 C 685,30 695,50 725,50 C 760,50 780,40 810,40"
+                stroke="#12131a"
+                strokeWidth="11"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+
+              {/* Layer 3: Diamond scale patterns inside the body core */}
+              <path 
+                d="M 70,42 C 100,42 120,20 140,20 C 160,20 170,35 170,45 C 170,55 155,65 145,55 C 135,45 145,25 175,25 C 210,25 230,58 250,58 C 270,58 280,40 280,30 C 280,20 265,10 255,20 C 245,30 255,50 285,50 C 320,50 340,18 360,18 C 380,18 390,32 390,42 C 390,52 375,62 365,52 C 355,42 365,22 395,22 C 430,22 450,58 470,58 C 490,58 500,40 500,30 C 500,20 485,10 475,20 C 465,30 475,50 505,50 C 540,50 560,18 580,18 C 600,18 610,32 610,42 C 610,52 595,62 585,52 C 575,42 585,22 615,22 C 650,22 670,58 690,58 C 710,58 720,40 720,30 C 720,20 705,10 695,20 C 685,30 695,50 725,50 C 760,50 780,40 810,40"
+                stroke="url(#scales)"
+                strokeWidth="11"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+
+              {/* Layer 4: Segmented parallel underbelly lines (transverse lines) */}
+              <path 
+                d="M 70,42 C 100,42 120,20 140,20 C 160,20 170,35 170,45 C 170,55 155,65 145,55 C 135,45 145,25 175,25 C 210,25 230,58 250,58 C 270,58 280,40 280,30 C 280,20 265,10 255,20 C 245,30 255,50 285,50 C 320,50 340,18 360,18 C 380,18 390,32 390,42 C 390,52 375,62 365,52 C 355,42 365,22 395,22 C 430,22 450,58 470,58 C 490,58 500,40 500,30 C 500,20 485,10 475,20 C 465,30 475,50 505,50 C 540,50 560,18 580,18 C 600,18 610,32 610,42 C 610,52 595,62 585,52 C 575,42 585,22 615,22 C 650,22 670,58 690,58 C 710,58 720,40 720,30 C 720,20 705,10 695,20 C 685,30 695,50 725,50 C 760,50 780,40 810,40"
+                stroke="url(#snakeGrad)"
+                strokeWidth="11"
+                strokeDasharray="1.2, 5.5"
+                strokeLinecap="butt"
+                strokeLinejoin="miter"
+                fill="none"
+                opacity="0.35"
+              />
+
+              {/* Tapering tail at the start of the body */}
+              <g transform="translate(70, 42) rotate(175)">
+                <path 
+                  d="M 0,-6.5 C 15,-4 30,-1.5 45,0 C 30,1.5 15,4 0,6.5 Z" 
+                  fill="none" 
+                  stroke="#F4B5CD" 
+                  strokeWidth="0.8" 
+                />
+                <path 
+                  d="M 10,-5.5 L 10,5.5 M 20,-4 L 20,4 M 30,-2.5 L 30,2.5 M 40,-1 L 40,1" 
+                  stroke="#F4B5CD" 
+                  strokeWidth="0.5" 
+                  strokeOpacity="0.3"
+                />
+              </g>
+
+              {/* Snake head group, positioned at the end of the body */}
+              <g transform="translate(810, 40) rotate(-6)">
+                {/* Elegant realistic snake head profile outline (viper style) */}
+                <path 
+                  d="M -8,-5.5 
+                     C -3,-9 5,-10.5 13,-9 
+                     C 20,-8 28,-6 32,-3.5 
+                     C 35,-1.5 36,0.5 33,1.8 
+                     C 29,3.2 21,4.2 14,4.5 
+                     C 6,4.8 -2,4.8 -8,5.5 Z"
+                  fill="#12131a" 
+                  stroke="url(#snakeGrad)" 
+                  strokeWidth="1.4" 
+                  strokeLinejoin="round"
+                />
+                {/* Head scale shading texture matching the body */}
+                <path 
+                  d="M -8,-5.5 
+                     C -3,-9 5,-10.5 13,-9 
+                     C 20,-8 28,-6 32,-3.5 
+                     C 35,-1.5 36,0.5 33,1.8 
+                     C 29,3.2 21,4.2 14,4.5 
+                     C 6,4.8 -2,4.8 -8,5.5 Z"
+                  fill="url(#scales)"
+                  opacity="0.85"
+                />
+                {/* Underbelly detail curves in head */}
+                <path d="M 12,4.2 C 5,4.5 -1,4.8 -8,5.5" stroke="url(#snakeGrad)" strokeWidth="0.8" strokeOpacity="0.4" fill="none" />
+                {/* Scale shading lines inside head for realistic texture */}
+                <path d="M 6,-9 C 11,-8 16,-6 20,-3.5 M 10,-9.2 C 15,-8.2 19,-6.2 23,-3.8" stroke="#F4B5CD" strokeWidth="0.6" strokeOpacity="0.3" fill="none" />
+                {/* Sleek, eye-less minimalist viper head */}
+                {/* Elegant closed mouth line */}
+                <path d="M 18,1.2 Q 26,1.2 31,0" stroke="url(#snakeGrad)" strokeWidth="0.9" strokeOpacity="0.8" fill="none" />
+                {/* Long, delicate, wavy forked tongue sliding out of snout */}
+                <path d="M 32,1 C 40,0.5 45,-1.5 50,0 C 53,1 56,0 60,-1.5" stroke="#FF1E56" strokeWidth="1" strokeLinecap="round" fill="none" />
+                <path d="M 50,0 C 52,1.2 55,2.5 59,3.5" stroke="#FF1E56" strokeWidth="1" strokeLinecap="round" fill="none" />
+              </g>
+            </g>
+
+            {/* Sparkle star accents in the air */}
+            <path d="M 120 10 L 122 12 L 120 14 L 118 12 Z" fill="#F4B5CD" opacity="0.6" />
+            <path d="M 240 50 L 242 52 L 240 54 L 238 52 Z" fill="#C3B4FC" opacity="0.6" />
+            <path d="M 330 15 L 331.5 17 L 330 19 L 328.5 17 Z" fill="#F4B5CD" opacity="0.5" />
+          </svg>
+        </div>
+
+        <div className="flex items-center gap-4 md:gap-8 overflow-x-auto no-scrollbar z-10">
           <span 
             onClick={() => {
               setSelectedStudentId(null);
@@ -431,17 +552,8 @@ export default function App() {
                     : syncStatus === 'syncing'
                       ? 'синхронизация'
                       : 'ошибка sync' 
-                : 'Сохранить в облако'}
+                : 'sync'}
             </span>
-          </button>
-
-          <button
-            onClick={handleResetDemoData}
-            className="px-2.5 py-1.5 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5 text-[9px] uppercase tracking-wider font-semibold flex items-center gap-1.5 transition duration-200"
-            title="Откатить данные до демо примера"
-          >
-            <RefreshCw className="w-3 h-3" />
-            <span className="hidden sm:inline">Сброс демо</span>
           </button>
         </div>
       </nav>

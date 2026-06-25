@@ -16,7 +16,7 @@ export interface Lesson {
   reason?: string;     // Reason for missed / cancelled
   summary?: string;    // What was covered
   homework?: string;   // Homework assigned
-  homeworkStatus?: 'pending' | 'completed' | 'partially' | 'missed';
+  homeworkStatus?: 'pending' | 'completed' | 'partially' | 'missed' | 'ai_assisted';
   homeworkReason?: string; // Reason for not completed homework
   notes?: string;      // Tutor comments / dynamic request notes from the lesson
   ktpStatus?: 'according' | 'deviated' | 'caught_up'; // 'according' (Шли по КТП) | 'deviated' (Отошли от программы) | 'caught_up' (Догнали программу)
@@ -79,6 +79,8 @@ export interface Student {
       id: string;
       title: string;
       status: 'pending' | 'completed' | 'missed' | 'skipped';
+      pdfs?: { name: string; url?: string; base64?: string }[];
+      links?: { name: string; url: string }[];
     }[];
   };
 }
@@ -90,10 +92,17 @@ export interface TutorStats {
   unpaidBalanceAlerts: number;
 }
 
+export interface SyllabusProgramTopic {
+  id: string;
+  title: string;
+  pdfs?: { name: string; url?: string; base64?: string }[];
+  links?: { name: string; url: string }[];
+}
+
 export interface SyllabusProgram {
   id: string;
   name: string;
-  topics: string[];
+  topics: (string | SyllabusProgramTopic)[];
 }
 
 export interface CalendarReminder {

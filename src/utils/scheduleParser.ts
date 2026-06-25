@@ -163,3 +163,35 @@ export function parseRawKtpText(text: string): string[] {
   }
   return topics;
 }
+
+export function normalizeScheduleSlot(slot: string): string {
+  const trimmed = slot.trim();
+  if (!trimmed) return '';
+
+  const dayMap: Record<string, string> = {
+    'пн': 'Пн', 'вт': 'Вт', 'ср': 'Ср', 'чт': 'Чт', 'пт': 'Пт', 'сб': 'Сб', 'вс': 'Вс',
+    'pn': 'Пн', 'vt': 'Вт', 'sr': 'Ср', 'ch': 'Чт', 'pt': 'Пт', 'sb': 'Сб', 'vs': 'Вс',
+    'mon': 'Пн', 'tue': 'Вт', 'wed': 'Ср', 'thu': 'Чт', 'fri': 'Пт', 'sat': 'Сб', 'sun': 'Вс',
+    'monday': 'Пн', 'tuesday': 'Вт', 'wednesday': 'Ср', 'thursday': 'Чт', 'friday': 'Пт', 'saturday': 'Сб', 'sunday': 'Вс',
+    'понедельник': 'Пн', 'вторник': 'Вт', 'среда': 'Ср', 'четверг': 'Чт', 'пятница': 'Пт', 'суббота': 'Сб', 'воскресенье': 'Вс'
+  };
+
+  const match = trimmed.match(/^([а-яa-z]+)\s*(.*)$/i);
+  if (match) {
+    const dayInput = match[1].toLowerCase();
+    const rest = match[2];
+    const normDay = dayMap[dayInput] || (dayInput.charAt(0).toUpperCase() + dayInput.slice(1).toLowerCase());
+    return rest ? `${normDay} ${rest}` : normDay;
+  }
+
+  return trimmed;
+}
+
+export function normalizeScheduleText(text: string): string[] {
+  return text
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(normalizeScheduleSlot);
+}
+

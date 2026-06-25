@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Student, COVER_PRESETS } from '../types';
 import { X, UserPlus, Sparkles } from 'lucide-react';
+import { normalizeScheduleText } from '../utils/scheduleParser';
 
 interface AddStudentModalProps {
   onClose: () => void;
@@ -25,10 +26,8 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
     e.preventDefault();
     if (!name || !subject || !goal) return;
 
-    const schedule = scheduleText
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
+    const schedule = normalizeScheduleText(scheduleText);
+
 
     const newStudent: Student = {
       id: 'stud-' + Date.now(),
