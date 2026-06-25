@@ -24,6 +24,22 @@ export default function App() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
+  // Dynamic Theme (gothic or cosmic)
+  const [theme, setTheme] = useState<'gothic' | 'cosmic'>(() => {
+    return (localStorage.getItem('tutor_theme') as 'gothic' | 'cosmic') || 'cosmic';
+  });
+
+  useEffect(() => {
+    const bodyClass = document.body.classList;
+    bodyClass.remove('theme-gothic', 'theme-cosmic');
+    if (theme === 'gothic') {
+      bodyClass.add('theme-gothic');
+    } else {
+      bodyClass.add('theme-cosmic');
+    }
+    localStorage.setItem('tutor_theme', theme);
+  }, [theme]);
+
   useEffect(() => {
     const handleScroll = () => {
       if (window.scrollY > 300) {
@@ -338,7 +354,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="bg-[#0b0c11] min-h-screen text-[#E2E8F0] font-sans">
+    <div className="bg-[var(--bg-color)] min-h-screen text-[var(--text-primary)] font-sans transition-colors duration-300">
       
       {/* Top micro motivational banner */}
       <div className="bg-gradient-to-r from-[#12131a] via-[#1c1421] to-[#12131a] border-b border-white/[0.03] text-center py-1.5 px-4 text-[10px] tracking-[0.25em] text-[#F4B5CD]/30 uppercase select-none font-medium flex items-center justify-center gap-2">
@@ -350,8 +366,8 @@ export default function App() {
       {/* Universal Global Header Banner Navigation */}
       <nav className="h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-8 bg-[#12131a] sticky top-0 z-40 relative overflow-hidden">
         {/* Beautiful vector pink snake */}
-        <div className="absolute inset-0 flex items-center justify-end pr-0 pointer-events-none select-none z-0 opacity-35">
-          <svg className="h-14 w-[850px] text-[#F4B5CD] filter drop-shadow-[0_0_15px_rgba(244,181,205,0.45)] translate-x-[10px] md:translate-x-[20px]" viewBox="0 0 900 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0 opacity-35">
+          <svg className="h-14 w-[850px] text-[#F4B5CD] filter drop-shadow-[0_0_15px_rgba(244,181,205,0.45)] translate-x-0" viewBox="0 0 900 80" fill="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="snakeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor="#F4B5CD" />
@@ -370,7 +386,7 @@ export default function App() {
                 d="M 70,42 C 100,42 120,20 140,20 C 160,20 170,35 170,45 C 170,55 155,65 145,55 C 135,45 145,25 175,25 C 210,25 230,58 250,58 C 270,58 280,40 280,30 C 280,20 265,10 255,20 C 245,30 255,50 285,50 C 320,50 340,18 360,18 C 380,18 390,32 390,42 C 390,52 375,62 365,52 C 355,42 365,22 395,22 C 430,22 450,58 470,58 C 490,58 500,40 500,30 C 500,20 485,10 475,20 C 465,30 475,50 505,50 C 540,50 560,18 580,18 C 600,18 610,32 610,42 C 610,52 595,62 585,52 C 575,42 585,22 615,22 C 650,22 670,58 690,58 C 710,58 720,40 720,30 C 720,20 705,10 695,20 C 685,30 695,50 725,50 C 760,50 780,40 810,40"
                 stroke="url(#snakeGrad)"
                 strokeWidth="13"
-                strokeLinecap="round"
+                strokeLinecap="butt"
                 strokeLinejoin="round"
                 fill="none"
                 opacity="0.85"
@@ -379,9 +395,9 @@ export default function App() {
               {/* Layer 2: Mask core with background color to form a clean double-contour outline */}
               <path 
                 d="M 70,42 C 100,42 120,20 140,20 C 160,20 170,35 170,45 C 170,55 155,65 145,55 C 135,45 145,25 175,25 C 210,25 230,58 250,58 C 270,58 280,40 280,30 C 280,20 265,10 255,20 C 245,30 255,50 285,50 C 320,50 340,18 360,18 C 380,18 390,32 390,42 C 390,52 375,62 365,52 C 355,42 365,22 395,22 C 430,22 450,58 470,58 C 490,58 500,40 500,30 C 500,20 485,10 475,20 C 465,30 475,50 505,50 C 540,50 560,18 580,18 C 600,18 610,32 610,42 C 610,52 595,62 585,52 C 575,42 585,22 615,22 C 650,22 670,58 690,58 C 710,58 720,40 720,30 C 720,20 705,10 695,20 C 685,30 695,50 725,50 C 760,50 780,40 810,40"
-                stroke="#12131a"
+                stroke="var(--bg-card)"
                 strokeWidth="11"
-                strokeLinecap="round"
+                strokeLinecap="butt"
                 strokeLinejoin="round"
                 fill="none"
               />
@@ -391,7 +407,7 @@ export default function App() {
                 d="M 70,42 C 100,42 120,20 140,20 C 160,20 170,35 170,45 C 170,55 155,65 145,55 C 135,45 145,25 175,25 C 210,25 230,58 250,58 C 270,58 280,40 280,30 C 280,20 265,10 255,20 C 245,30 255,50 285,50 C 320,50 340,18 360,18 C 380,18 390,32 390,42 C 390,52 375,62 365,52 C 355,42 365,22 395,22 C 430,22 450,58 470,58 C 490,58 500,40 500,30 C 500,20 485,10 475,20 C 465,30 475,50 505,50 C 540,50 560,18 580,18 C 600,18 610,32 610,42 C 610,52 595,62 585,52 C 575,42 585,22 615,22 C 650,22 670,58 690,58 C 710,58 720,40 720,30 C 720,20 705,10 695,20 C 685,30 695,50 725,50 C 760,50 780,40 810,40"
                 stroke="url(#scales)"
                 strokeWidth="11"
-                strokeLinecap="round"
+                strokeLinecap="butt"
                 strokeLinejoin="round"
                 fill="none"
               />
@@ -409,9 +425,9 @@ export default function App() {
               />
 
               {/* Tapering tail at the start of the body */}
-              <g transform="translate(70, 42) rotate(175)">
+              <g transform="translate(70, 42) rotate(180)">
                 <path 
-                  d="M 0,-6.5 C 15,-4 30,-1.5 45,0 C 30,1.5 15,4 0,6.5 Z" 
+                  d="M 0,-6.5 C 15,-4 30,-1.5 45,0 C 30,1.5 15,4 0,6.5" 
                   fill="none" 
                   stroke="#F4B5CD" 
                   strokeWidth="0.8" 
@@ -434,7 +450,7 @@ export default function App() {
                      C 35,-1.5 36,0.5 33,1.8 
                      C 29,3.2 21,4.2 14,4.5 
                      C 6,4.8 -2,4.8 -8,5.5 Z"
-                  fill="#12131a" 
+                  fill="var(--bg-card)" 
                   stroke="url(#snakeGrad)" 
                   strokeWidth="1.4" 
                   strokeLinejoin="round"
@@ -517,6 +533,14 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
+          <button
+            onClick={() => setTheme(theme === 'gothic' ? 'cosmic' : 'gothic')}
+            className="p-2 rounded-xl text-white/40 hover:text-[#F4B5CD] hover:bg-white/5 transition-all duration-300 cursor-pointer text-sm flex items-center justify-center"
+            title={theme === 'gothic' ? 'Активировать космическую тему' : 'Активировать черно-красную готическую тему'}
+          >
+            {theme === 'gothic' ? '✦' : '🦇'}
+          </button>
+
           <button
             onClick={() => setShowSyncModal(true)}
             className={`px-3 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${

@@ -171,9 +171,9 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
   } | null>(null);
 
   // Calculate stats
-  const totalMocks = student.mockExams.length;
+  const totalMocks = (student.mockExams || []).length;
   const averagePercentage = totalMocks > 0
-    ? Math.round(student.mockExams.reduce((acc, cr) => acc + (cr.score / cr.maxScore), 0) / totalMocks * 100)
+    ? Math.round((student.mockExams || []).reduce((acc, cr) => acc + (cr.score / cr.maxScore), 0) / totalMocks * 100)
     : 0;
 
   const missedExcused = student.lessons.filter(l => l.status === 'missed_excused').length;
@@ -260,7 +260,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
 
     onUpdateStudent({
       ...student,
-      mockExams: [...student.mockExams, mock]
+      mockExams: [...(student.mockExams || []), mock]
     });
 
     // Reset form
@@ -283,7 +283,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
       onConfirm: () => {
         onUpdateStudent({
           ...student,
-          mockExams: student.mockExams.filter(m => m.id !== mockId)
+          mockExams: (student.mockExams || []).filter(m => m.id !== mockId)
         });
         setCustomConfirm(null);
       }
@@ -1256,7 +1256,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             }`}
           >
             <Award className="w-4 h-4" />
-            Прогресс и Экзамены ({student.mockExams.length})
+            Прогресс и Экзамены ({(student.mockExams || []).length})
           </button>
           <button
             onClick={() => setActiveTab('topicGaps')}
@@ -1299,21 +1299,24 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
               <div className="flex justify-between items-center mb-5">
                 <div>
                   <h3 className="font-serif text-white text-base">Кривая результатов</h3>
-                  <p className="text-[10px] uppercase text-white/45 tracking-wider mt-0.5">Входной тест пройден на результат {student.mockExams[0]?.score || 0}%</p>
+                  <p className="text-[10px] uppercase text-white/45 tracking-wider mt-0.5">Входной тест пройден на результат {(student.mockExams || [])[0]?.score || 0}%</p>
                 </div>
                 <button
                   type="button"
-                  disabled
-                  className="bg-white/5 border border-white/10 text-white/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 rounded-xl cursor-not-allowed opacity-50 select-none pointer-events-none"
-                  title="Кнопка временно отключена"
+                  onClick={() => setShowAddMock(!showAddMock)}
+                  className={`border text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 px-3 py-1.5 rounded-xl cursor-pointer transition-all duration-300 ${
+                    showAddMock
+                      ? 'bg-[#F4B5CD]/20 border-[#F4B5CD]/30 text-[#F4B5CD]'
+                      : 'bg-[#F4B5CD]/5 border-[#F4B5CD]/10 text-[#F4B5CD] hover:bg-[#F4B5CD]/10'
+                  }`}
                 >
-                  <Plus className="w-3.5 h-3.5 text-white/20" />
+                  <Plus className={`w-3.5 h-3.5 transition-transform duration-300 ${showAddMock ? 'rotate-45' : ''}`} />
                   Внести пробник
                 </button>
               </div>
 
               <SvgChart 
-                points={student.mockExams.map(m => ({
+                points={(student.mockExams || []).map(m => ({
                   id: m.id,
                   label: m.name,
                   value: m.score,
@@ -1436,7 +1439,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                       : 'text-white/45 border border-transparent hover:text-white/80'
                   }`}
                 >
-                  История пробных работ ({student.mockExams.length})
+                  История пробных работ ({(student.mockExams || []).length})
                 </button>
               </div>
 
@@ -1572,12 +1575,12 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                     ))
                   )
                 ) : (
-                  student.mockExams.length === 0 ? (
+                  (student.mockExams || []).length === 0 ? (
                     <div className="p-12 text-center text-white/40 text-xs">
                       Записи результатов экзаменов отсутствуют.
                     </div>
                   ) : (
-                    [...student.mockExams].reverse().map((exam) => {
+                    [...(student.mockExams || [])].reverse().map((exam) => {
                       const progressRatio = exam.score / exam.maxScore;
                       return (
                         <div key={exam.id} className="p-5 hover:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition text-xs">

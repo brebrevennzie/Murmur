@@ -9,16 +9,16 @@ interface StudentCardProps {
 
 export const StudentCard: React.FC<StudentCardProps> = ({ student, onSelect }) => {
   // Compute average mock score
-  const mockCount = student.mockExams.length;
+  const mockCount = (student.mockExams || []).length;
   const avgPct = mockCount > 0 
     ? Math.round(
-        student.mockExams.reduce((acc, current) => acc + (current.score / current.maxScore), 0) / mockCount * 100
+        (student.mockExams || []).reduce((acc, current) => acc + (current.score / current.maxScore), 0) / mockCount * 100
       )
     : null;
 
   // Find latest mock score
   const latestMock = mockCount > 0 
-    ? student.mockExams[mockCount - 1] 
+    ? (student.mockExams || [])[mockCount - 1] 
     : null;
 
   return (

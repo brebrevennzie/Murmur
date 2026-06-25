@@ -16,14 +16,60 @@
   --color-mauve-tint: #D6B3C4;
 }
 
+:root {
+  --bg-color: #000000;
+  --bg-image: radial-gradient(at 0% 0%, rgba(244, 181, 205, 0.12) 0px, transparent 55%),
+              radial-gradient(at 100% 100%, rgba(195, 180, 252, 0.12) 0px, transparent 55%),
+              radial-gradient(at 50% 50%, rgba(0, 0, 0, 0.99) 0px, transparent 85%);
+  --bg-card: #050507;
+  --bg-card-rgb: 5, 5, 7;
+  --text-primary: #e2e8f0;
+  --text-secondary: rgba(226, 232, 240, 0.65);
+  --border-color: rgba(244, 181, 205, 0.18);
+  --border-subtle: rgba(244, 181, 205, 0.08);
+  --accent-pink: #f472b6;
+  --accent-lavender: #a78bfa;
+  --bg-nav-mask: #050507;
+}
+
+.theme-cosmic {
+  --bg-color: #000000;
+  --bg-image: radial-gradient(at 0% 0%, rgba(244, 181, 205, 0.12) 0px, transparent 55%),
+              radial-gradient(at 100% 100%, rgba(195, 180, 252, 0.12) 0px, transparent 55%),
+              radial-gradient(at 50% 50%, rgba(0, 0, 0, 0.99) 0px, transparent 85%);
+  --bg-card: #050507;
+  --bg-card-rgb: 5, 5, 7;
+  --text-primary: #e2e8f0;
+  --text-secondary: rgba(226, 232, 240, 0.65);
+  --border-color: rgba(244, 181, 205, 0.18);
+  --border-subtle: rgba(244, 181, 205, 0.08);
+  --accent-pink: #f472b6;
+  --accent-lavender: #a78bfa;
+  --bg-nav-mask: #050507;
+}
+
+.theme-gothic {
+  --bg-color: #060102;
+  --bg-image: radial-gradient(at 0% 0%, rgba(239, 68, 68, 0.15) 0px, transparent 55%),
+              radial-gradient(at 100% 100%, rgba(159, 18, 57, 0.18) 0px, transparent 55%),
+              radial-gradient(at 50% 50%, rgba(6, 1, 2, 0.99) 0px, transparent 85%);
+  --bg-card: #0c0305;
+  --bg-card-rgb: 12, 3, 5;
+  --text-primary: #ffe4e6;
+  --text-secondary: rgba(254, 205, 211, 0.65);
+  --border-color: rgba(239, 68, 68, 0.22);
+  --border-subtle: rgba(239, 68, 68, 0.1);
+  --accent-pink: #f43f5e;
+  --accent-lavender: #e11d48;
+  --bg-nav-mask: #0c0305;
+}
+
 body {
-  background-color: #0b0c11;
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(142, 164, 201, 0.07) 0px, transparent 55%),
-    radial-gradient(at 100% 100%, rgba(121, 134, 203, 0.07) 0px, transparent 55%),
-    radial-gradient(at 50% 50%, rgba(11, 12, 17, 0.98) 0px, transparent 85%);
+  background-color: var(--bg-color);
+  background-image: var(--bg-image);
   background-attachment: fixed;
-  color: #E2E8F0;
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Custom Notion-like scrollbar */
@@ -35,19 +81,91 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(142, 164, 201, 0.2);
+  background: var(--border-color);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(142, 164, 201, 0.45);
+  background: var(--accent-pink);
+  opacity: 0.5;
 }
 
-/* Eye-safe silver substitution for pure white text to prevent glare */
+/* Dynamic theme overrides for key elements */
 .text-white {
-  color: #ccd3de !important;
+  color: var(--text-primary) !important;
+}
+.hover\:text-white:hover {
+  color: var(--text-primary) !important;
+  opacity: 0.85;
 }
 
-/* Eye-safe hover adjustments */
-.hover\:text-white:hover {
-  color: #e2e8f0 !important;
+.text-white\/30 {
+  color: var(--text-secondary) !important;
+  opacity: 0.45;
 }
+.text-white\/40 {
+  color: var(--text-secondary) !important;
+  opacity: 0.6;
+}
+.text-white\/50 {
+  color: var(--text-secondary) !important;
+  opacity: 0.75;
+}
+.text-white\/60 {
+  color: var(--text-secondary) !important;
+  opacity: 0.85;
+}
+.text-white\/70 {
+  color: var(--text-secondary) !important;
+  opacity: 0.9;
+}
+.text-white\/80 {
+  color: var(--text-primary) !important;
+  opacity: 0.85;
+}
+
+.bg-\[\#12131a\] {
+  background-color: var(--bg-card) !important;
+}
+.bg-\[\#12131a\]\/30 {
+  background-color: rgba(var(--bg-card-rgb), 0.3) !important;
+}
+.bg-\[\#12131a\]\/40 {
+  background-color: rgba(var(--bg-card-rgb), 0.4) !important;
+}
+.bg-\[\#12131a\]\/60 {
+  background-color: rgba(var(--bg-card-rgb), 0.6) !important;
+}
+.bg-\[\#12131a\]\/80 {
+  background-color: rgba(var(--bg-card-rgb), 0.8) !important;
+}
+.bg-\[\#12131a\]\/95 {
+  background-color: rgba(var(--bg-card-rgb), 0.95) !important;
+}
+
+.bg-white\/\[0\.01\] {
+  background-color: rgba(var(--bg-card-rgb), 0.01) !important;
+}
+.bg-white\/5 {
+  background-color: rgba(var(--bg-card-rgb), 0.05) !important;
+}
+
+.border-white\/5 {
+  border-color: var(--border-subtle) !important;
+}
+.border-white\/10 {
+  border-color: var(--border-color) !important;
+}
+.border-white\/\[0\.03\] {
+  border-color: var(--border-subtle) !important;
+}
+
+/* Extra support for selected inputs, option tags, elements to adapt */
+option {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+select {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
