@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SyllabusProgram, CalendarReminder } from './types';
+import { Student, SyllabusProgram, CalendarReminder, StudentCabinet } from './types';
 import { getInitialStudents, saveStudents, INITIAL_STUDENTS, getInitialPrograms, savePrograms } from './data';
 import { syncAllStudents } from './utils/paymentSync';
 import { safeStorage } from './utils/safeStorage';
@@ -20,6 +20,8 @@ import {
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 import { StudentCabinetView } from './components/StudentCabinetView';
 import { TestsManager } from './components/TestsManager';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
 
 export default function App() {
   const queryParams = new URLSearchParams(window.location.search);
@@ -199,6 +201,38 @@ export default function App() {
     isConnectionBlocked,
     reconnectSync,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
+
+  // Self-healing auto-sync: Ensure all local student cabinets are uploaded to Firestore in the background
+  useEffect(() => {
+    const syncLocalCabinetsToCloud = async () => {
+      try {
+        const stored = localStorage.getItem('tutor_local_cabinets');
+        if (!stored) return;
+        const parsed = JSON.parse(stored) as Record<string, StudentCabinet>;
+        
+        const activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
+        if (!activeTutorId) return;
+
+        const promises = Object.values(parsed).map(async (cab) => {
+          const isActive = students.some(s => s.cabinetId === cab.id || s.id === cab.studentId);
+          if (isActive || cab.tutorId === activeTutorId) {
+            let updatedCab = { ...cab };
+            if (updatedCab.tutorId !== activeTutorId) {
+              updatedCab.tutorId = activeTutorId;
+            }
+            await setDoc(doc(db, 'cabinets', updatedCab.id), updatedCab, { merge: true });
+          }
+        });
+        await Promise.all(promises);
+      } catch (e) {
+        console.error('Error auto-healing/syncing local cabinets to Firestore:', e);
+      }
+    };
+
+    if (students.length > 0) {
+      syncLocalCabinetsToCloud();
+    }
+  }, [students, user]);
 
   const updateTimestamp = () => {
     const timestamp = new Date().toISOString();

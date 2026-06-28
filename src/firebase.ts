@@ -19,7 +19,14 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 
+// Smart database ID: if VITE_FIREBASE_PROJECT_ID is a custom project (different from local config),
+// default to undefined (which connects to the default '(default)' database) unless VITE_FIREBASE_FIRESTORE_DATABASE_ID is specified.
+const isCustomProject = !!metaEnv.VITE_FIREBASE_PROJECT_ID && metaEnv.VITE_FIREBASE_PROJECT_ID !== firebaseConfigLocal.projectId;
+const databaseId = isCustomProject
+  ? (metaEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID || undefined)
+  : (firebaseConfigLocal.firestoreDatabaseId || undefined);
+
 // Use initializeFirestore with experimentalForceLongPolling to bypass ISP/network/VPN WebSocket blocks (e.g. in Russia/RF)
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, firebaseConfigLocal.firestoreDatabaseId || undefined);
+}, databaseId);
