@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Student, Lesson, Payment, CalendarReminder } from '../types';
-import { Users, Calendar, AlertCircle, TrendingUp, Clock, ShieldAlert, Check, ArrowRight, Trash2, Edit3, PlusCircle, X, ChevronLeft, ChevronRight, Move, Paperclip, Link, FileText, ExternalLink } from 'lucide-react';
+import { Users, Calendar, AlertCircle, TrendingUp, Clock, ShieldAlert, Check, ArrowRight, Trash2, Edit3, PlusCircle, X, ChevronLeft, ChevronRight, Move, Paperclip, Link, FileText, ExternalLink, Video } from 'lucide-react';
 
 interface DashboardStatsProps {
   students: Student[];
@@ -308,17 +308,6 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
       // If student is created in a future month, they contribute 0 to this month's expected earnings
       if (createdYear > currentYear || (createdYear === currentYear && createdMonth > currentMonthIdx)) {
         return sum;
-      }
-      
-      // If student is created in the current month/year, start from the creation day
-      if (createdYear === currentYear && createdMonth === currentMonthIdx) {
-        const parts = student.createdAt.split('-');
-        if (parts.length >= 3) {
-          const dayPart = parseInt(parts[2], 10);
-          if (!isNaN(dayPart)) {
-            startDay = dayPart;
-          }
-        }
       }
     }
     
@@ -1199,7 +1188,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
       {/* Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Metric 1 */}
-        <div className="bg-[#12131a] p-5 border border-white/5 rounded-2xl flex items-center gap-4">
+        <div className="bg-gradient-to-br from-[#12131a] via-[#12131a] to-[#F4B5CD]/[0.04] p-5 border border-white/5 rounded-2xl flex items-center gap-4 shadow-lg hover:shadow-[#F4B5CD]/5 transition-all duration-300">
           <div className="w-10 h-10 rounded-xl bg-[#F4B5CD]/10 flex items-center justify-center shrink-0 border border-[#F4B5CD]/20">
             <Users className="w-5 h-5 text-[#F4B5CD]" />
           </div>
@@ -1211,7 +1200,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         </div>
 
         {/* Metric 2 */}
-        <div className="bg-[#12131a] p-5 border border-white/5 rounded-2xl flex items-center gap-4">
+        <div className="bg-gradient-to-br from-[#12131a] via-[#12131a] to-[#C3B4FC]/[0.04] p-5 border border-white/5 rounded-2xl flex items-center gap-4 shadow-lg hover:shadow-[#C3B4FC]/5 transition-all duration-300">
           <div className="w-10 h-10 rounded-xl bg-[#F4B5CD]/10 flex items-center justify-center shrink-0 border border-[#F4B5CD]/20">
             <TrendingUp className="w-5 h-5 text-[#F4B5CD]" />
           </div>
@@ -1225,7 +1214,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         </div>
 
         {/* Metric 3 */}
-        <div className="bg-[#12131a] p-5 border border-white/5 rounded-2xl flex items-center gap-4">
+        <div className="bg-gradient-to-br from-[#12131a] via-[#12131a] to-rose-500/[0.04] p-5 border border-white/5 rounded-2xl flex items-center gap-4 shadow-lg hover:shadow-rose-500/5 transition-all duration-300">
           <div className="w-10 h-10 rounded-xl bg-rose-950/20 flex items-center justify-center shrink-0 border border-rose-900/35">
             <ShieldAlert className={`w-5 h-5 ${debtCount > 0 ? 'text-rose-400 animate-pulse' : 'text-white/20'}`} />
           </div>
@@ -1514,7 +1503,11 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                                 {/* Top Row: Emoji, Name, and Paid status badge */}
                                 <div className="flex items-center justify-between gap-1 w-full min-w-0">
                                   <div className="flex items-center gap-1 min-w-0">
-                                    <span className="text-xs select-none shrink-0">{les.emoji}</span>
+                                    {les.emoji && (les.emoji.startsWith('data:') || les.emoji.startsWith('http')) ? (
+                                      <img src={les.emoji} alt="" className="w-4 h-4 rounded-full object-cover shrink-0 select-none" />
+                                    ) : (
+                                      <span className="text-xs select-none shrink-0">{les.emoji}</span>
+                                    )}
                                     <span className="text-[10px] font-bold truncate text-inherit leading-tight">
                                       {les.name.split(' ')[0]}
                                     </span>
@@ -1550,6 +1543,20 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                                     }`}>
                                       {les.time}
                                     </span>
+                                    {studentRef?.zoomLink && (
+                                      <a
+                                        href={studentRef.zoomLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                        }}
+                                        className="flex items-center justify-center bg-gradient-to-r from-blue-500/20 to-[#C3B4FC]/20 hover:from-blue-500/40 hover:to-[#C3B4FC]/40 p-0.5 rounded border border-blue-500/35 hover:border-blue-400 transition active:scale-95 text-blue-300 hover:text-white shadow-sm"
+                                        title="Войти в конференцию Zoom"
+                                      >
+                                        <Video className="w-2.5 h-2.5" />
+                                      </a>
+                                    )}
                                     {hasAttachments && (() => {
                                       if (!studentRef || !studentRef.program) return null;
                                       const sortedLessonsForKtp = [...studentRef.lessons]
@@ -1621,7 +1628,11 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
               {/* Soft Pastel Header */}
               <div className="p-4 bg-gradient-to-r from-purple-950/30 to-[#F4B5CD]/10 border-b border-white/5 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl select-none">{activeAction.emoji}</span>
+                  {activeAction.emoji && (activeAction.emoji.startsWith('data:') || activeAction.emoji.startsWith('http')) ? (
+                    <img src={activeAction.emoji} alt="" className="w-8 h-8 rounded-xl object-cover select-none shrink-0" />
+                  ) : (
+                    <span className="text-2xl select-none">{activeAction.emoji}</span>
+                  )}
                   <div>
                     <h3 className="text-sm font-serif text-white font-medium">{activeAction.name}</h3>
                     <p className="text-[9px] text-[#F4B5CD] uppercase tracking-widest font-mono font-medium">{activeAction.subject}</p>
@@ -1652,6 +1663,31 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                     </span>
                   </div>
                 </div>
+
+                {/* Zoom Meeting Link if available */}
+                {(() => {
+                  const student = students.find(s => s.id === activeAction.studentId);
+                  if (!student || !student.zoomLink) return null;
+                  return (
+                    <a
+                      href={student.zoomLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-[#C3B4FC]/10 border border-blue-500/30 hover:border-blue-400 p-3 rounded-xl transition duration-300 group/zoom"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-400 shrink-0 group-hover/zoom:scale-105 transition-all">
+                          <Video className="w-4 h-4 animate-pulse" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-white font-medium text-xs block leading-tight">Подключиться к Zoom</span>
+                          <span className="text-[10px] text-white/40 truncate block max-w-[200px] font-mono">{student.zoomLink}</span>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-blue-400/60 group-hover/zoom:text-blue-300 group-hover/zoom:translate-x-0.5 transition-all" />
+                    </a>
+                  );
+                })()}
 
                 {/* Active Topic with attachments */}
                 {(() => {

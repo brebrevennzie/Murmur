@@ -193,7 +193,11 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
               <div className="flex items-center gap-4">
                 {reportStyle === 'cosmic' && (
                   <>
-                    <span className="text-4xl select-none bg-white/[0.02] p-2 rounded-2xl border border-white/5 leading-none shrink-0">{student.emoji}</span>
+                    {student.emoji && (student.emoji.startsWith('data:') || student.emoji.startsWith('http')) ? (
+                      <img src={student.emoji} alt="" referrerPolicy="no-referrer" className="w-12 h-12 rounded-2xl object-cover border border-white/5 shadow-md shrink-0 select-none" />
+                    ) : (
+                      <span className="text-4xl select-none bg-white/[0.02] p-2 rounded-2xl border border-white/5 leading-none shrink-0">{student.emoji}</span>
+                    )}
                     <div>
                       <h1 className="text-base sm:text-lg font-sans font-light text-slate-100 tracking-wider leading-snug">{student.name}</h1>
                       <p className="text-[10px] text-[#F4C2D0]/60 font-sans tracking-widest uppercase mt-0.5">{student.subject} ({student.gradeClass})</p>
@@ -204,8 +208,12 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
 
                 {reportStyle === 'classic' && (
                   <>
-                    <div className="w-14 h-14 flex items-center justify-center bg-stone-50 border border-stone-200 rounded-full text-3xl shrink-0 leading-none shadow-sm select-none">
-                      {student.emoji}
+                    <div className="w-14 h-14 flex items-center justify-center bg-stone-50 border border-stone-200 rounded-full text-3xl shrink-0 leading-none shadow-sm select-none overflow-hidden">
+                      {student.emoji && (student.emoji.startsWith('data:') || student.emoji.startsWith('http')) ? (
+                        <img src={student.emoji} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                      ) : (
+                        student.emoji
+                      )}
                     </div>
                     <div>
                       <h1 className="text-lg sm:text-xl font-serif font-medium text-stone-900 tracking-normal leading-tight">{student.name}</h1>
@@ -217,8 +225,12 @@ export function ParentReportModal({ student, onClose }: ParentReportModalProps) 
 
                 {reportStyle === 'patsan' && (
                   <>
-                    <div className="text-3xl p-2 border border-slate-700 bg-slate-900 rounded-xl shrink-0 leading-none">
-                      {student.emoji}
+                    <div className="w-12 h-12 flex items-center justify-center border border-slate-700 bg-slate-900 rounded-xl shrink-0 leading-none overflow-hidden select-none">
+                      {student.emoji && (student.emoji.startsWith('data:') || student.emoji.startsWith('http')) ? (
+                        <img src={student.emoji} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-3xl">{student.emoji}</span>
+                      )}
                     </div>
                     <div>
                       <h1 className="text-base sm:text-lg font-sans font-medium text-slate-100 tracking-wider leading-snug">{student.name}</h1>

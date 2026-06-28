@@ -165,7 +165,12 @@ export const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ onClos
                         <span className="font-bold text-white font-serif">{item.name}</span>
                         {item.matchedStudent ? (
                           <span className="text-[8px] bg-lavender/10 text-lavender border border-lavender/25 px-1.5 py-0.5 uppercase font-medium rounded-md">
-                            {item.matchedStudent.emoji} Есть кабинет
+                            {item.matchedStudent.emoji && (item.matchedStudent.emoji.startsWith('data:') || item.matchedStudent.emoji.startsWith('http')) ? (
+                              <img src={item.matchedStudent.emoji} alt="" className="w-3.5 h-3.5 rounded-full object-cover inline-block shrink-0 select-none mr-0.5" />
+                            ) : (
+                              <span className="mr-0.5">{item.matchedStudent.emoji}</span>
+                            )}
+                            Есть кабинет
                           </span>
                         ) : (
                           <span className="text-[8px] bg-[#8EA4C9]/10 text-[#8EA4C9] border border-[#8EA4C9]/20 px-1.5 py-0.2 uppercase font-medium rounded-md">

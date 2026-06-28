@@ -8,19 +8,77 @@ interface AddStudentModalProps {
   onAdd: (student: Student) => void;
 }
 
-const EMOJI_PRESETS = ['💖', '❤️', '💝', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💕', '💞', '💓', '💗', '💘', '💟', '❣️', '🌸', '🌹', '🌺', '🌻', '🌼', '🌷', '🐱', '🐰', '🦊', '🐻', '🐼'];
+const EMOJI_PRESETS = [
+  // Учёба, Предметы и Инструменты
+  '📚', '🎓', '🏫', '🎒', '📝', '💻', '📐', '🧪', '🧬', '🌍', '🎨', '🎭', '💡', '♟️',
+  // Ученики и Персонажи
+  '🙋‍♂️', '🙋‍♀️', '🧑‍🎓', '👨‍💻', '👩‍💻', '🤓', '😎', '😊', '✍️',
+  // Мудрые и Дружелюбные животные
+  '🦉', '🦊', '🦁', '🐯', '🐻', '🐼', '🐱', '🐰', '🐬',
+  // Достижения и Символы
+  '⭐', '✨', '🏆', '🥇', '💖', '🍀'
+];
 
 export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd }) => {
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('Русский язык');
   const [gradeClass, setGradeClass] = useState('11 класс');
-  const [goal, setGoal] = useState('');
+  const [goal, setGoal] = useState('Цель не указана');
   const [balanceLessons, setBalanceLessons] = useState('0');
   const [hourlyRate, setHourlyRate] = useState('1500');
   const [scheduleText, setScheduleText] = useState('Пн 17:00, Чт 17:00');
   const [selectedCover, setSelectedCover] = useState(COVER_PRESETS[0].value);
   const [selectedEmoji, setSelectedEmoji] = useState(EMOJI_PRESETS[0]);
   const [notes, setNotes] = useState('');
+  const [zoomLink, setZoomLink] = useState('');
+
+  React.useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              if (event.target?.result) {
+                setSelectedEmoji(event.target.result as string);
+              }
+            };
+            reader.readAsDataURL(file);
+            e.preventDefault();
+          }
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+    };
+  }, []);
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (event.target?.result) {
+              setSelectedEmoji(event.target.result as string);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +101,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
       notes: notes || 'Заметки не заполнены. Нажмите изменить, чтобы оставить комментарий к процессу.',
       isActive: true,
       createdAt: new Date().toISOString().split('T')[0],
+      zoomLink: zoomLink.trim() || undefined,
       mockExams: [],
       lessons: [],
       payments: Number(balanceLessons) > 0 ? [{
@@ -60,7 +119,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-start justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-start justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn" onClick={onClose} onPaste={handlePaste}>
       <div 
         className="bg-[#12131a] w-full max-w-2xl border border-white/10 shadow-2xl overflow-hidden my-4 md:my-8 animate-slideUp text-left rounded-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -70,8 +129,12 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
           className="h-24 w-full p-6 flex items-end justify-between transition-all relative"
           style={{ background: selectedCover, backgroundSize: 'cover' }}
         >
-          <span className="text-4xl p-2 bg-[#12131a] rounded-2xl shadow-xl translate-y-8 select-none border border-white/10">
-            {selectedEmoji}
+          <span className="w-16 h-16 flex items-center justify-center bg-[#12131a] rounded-2xl shadow-xl translate-y-8 select-none border border-white/10 overflow-hidden shrink-0">
+            {selectedEmoji.startsWith('data:') || selectedEmoji.startsWith('http') ? (
+              <img src={selectedEmoji} alt="Avatar" className="w-full h-full object-cover rounded-2xl" />
+            ) : (
+              <span className="text-4xl leading-none">{selectedEmoji}</span>
+            )}
           </span>
           <button 
             type="button"
@@ -99,19 +162,6 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
                 placeholder="Софья Ковалева"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-white/5 bg-white/5 text-white placeholder-white/20 focus:border-[#8EA4C9] focus:outline-none rounded-xl"
-              />
-            </div>
-
-            {/* Goal */}
-            <div>
-              <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40 mb-1">Основная цель обучения</label>
-              <input 
-                type="text" 
-                required
-                placeholder="Подготовка к ЕГЭ на 80+ баллов"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
                 className="w-full text-xs px-3 py-2 border border-white/5 bg-white/5 text-white placeholder-white/20 focus:border-[#8EA4C9] focus:outline-none rounded-xl"
               />
             </div>
@@ -144,18 +194,6 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
               />
             </div>
 
-            {/* Starting Balance of pre-paid classes */}
-            <div>
-              <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40 mb-1">Оплачено уроков вперед (абонемент)</label>
-              <input 
-                type="number" 
-                min="0"
-                value={balanceLessons}
-                onChange={(e) => setBalanceLessons(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-white/5 bg-white/5 text-white placeholder-white/20 focus:border-[#8EA4C9] focus:outline-none font-mono rounded-xl"
-              />
-            </div>
-
             {/* Rate */}
             <div>
               <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40 mb-1">Ставка за 1 академический час (₽)</label>
@@ -184,24 +222,94 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
                 Пример: <code className="text-white/50">Пн 17:00, Чт 18:30 (90 мин)</code>. Без указания минут урок считается часовым (60 мин).
               </p>
             </div>
+
+            {/* Zoom Link */}
+            <div className="md:col-span-2">
+              <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40 mb-1">
+                Ссылка на конференцию Zoom (необязательно)
+              </label>
+              <input 
+                type="url" 
+                placeholder="https://zoom.us/j/..."
+                value={zoomLink}
+                onChange={(e) => setZoomLink(e.target.value)}
+                className="w-full text-xs px-3 py-2 border border-white/5 bg-white/5 text-white placeholder-white/20 focus:border-[#8EA4C9] focus:outline-none rounded-xl"
+              />
+            </div>
           </div>
 
-          {/* Emoji Preset Selection */}
-          <div>
-            <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40 mb-1.5">Аватар ученика (стиль Notion)</label>
-            <div className="flex flex-wrap gap-2">
-              {EMOJI_PRESETS.map((em) => (
-                <button
-                  key={em}
-                  type="button"
-                  onClick={() => setSelectedEmoji(em)}
-                  className={`text-lg p-1.5 border transition select-none rounded-xl bg-[#0D0D0D] ${
-                    selectedEmoji === em ? 'border-[#8EA4C9] text-[#8EA4C9]' : 'border-white/5 hover:bg-white/5 text-white'
-                  }`}
-                >
-                  {em}
-                </button>
-              ))}
+          {/* Emoji Preset Selection and Upload / Paste Zone */}
+          <div className="space-y-1.5">
+            <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40">Аватар ученика</label>
+            <div className="flex flex-col md:flex-row gap-4 items-stretch">
+              {/* Preset List */}
+              <div className="flex-1">
+                <span className="block text-[8px] text-white/30 uppercase tracking-wider mb-1">Выберите эмодзи-аватар</span>
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-black/25 rounded-xl border border-white/5 no-scrollbar">
+                  {EMOJI_PRESETS.map((em) => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => setSelectedEmoji(em)}
+                      className={`text-lg p-1 transition select-none rounded-lg bg-[#0D0D0D] shrink-0 ${
+                        selectedEmoji === em ? 'ring-2 ring-[#8EA4C9] text-[#8EA4C9]' : 'border border-white/5 hover:bg-white/5 text-white'
+                      }`}
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Upload/Paste Zone */}
+              <div 
+                className="md:w-60 flex flex-col justify-between p-3.5 bg-black/25 border border-dashed border-white/10 rounded-xl relative hover:border-[#8EA4C9]/40 transition group"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files?.[0];
+                  if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      if (event.target?.result) {
+                        setSelectedEmoji(event.target.result as string);
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              >
+                <div className="text-center space-y-1">
+                  <span className="block text-[9px] text-[#8EA4C9] font-bold uppercase tracking-wider">Своё фото / PNG</span>
+                  <p className="text-[9px] text-white/40 leading-normal">
+                    Перетащите файл, скопируйте картинку и нажмите <kbd className="bg-white/5 px-1 py-0.5 rounded text-white/50">Ctrl+V</kbd> или выберите файл на ПК
+                  </p>
+                </div>
+                
+                <label className="mt-3 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-[9px] text-white font-bold uppercase tracking-widest rounded-lg cursor-pointer transition">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5 text-[#8EA4C9]">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                  Обзор файлов
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          if (event.target?.result) {
+                            setSelectedEmoji(event.target.result as string);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
 
@@ -224,18 +332,6 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose, onAdd
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Notes textarea */}
-          <div>
-            <label className="block text-[9px] uppercase tracking-widest font-bold text-white/40 mb-1">Методические примечания / особенности</label>
-            <textarea 
-              rows={2}
-              placeholder="Опишите особенности восприятия информации учеником, регулярные требования..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full text-xs px-3 py-2 border border-white/5 bg-white/5 text-white placeholder-white/20 focus:border-[#8EA4C9] focus:outline-none resize-none leading-relaxed rounded-xl"
-            />
           </div>
 
           {/* Footer controls */}

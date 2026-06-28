@@ -15,7 +15,7 @@ import {
   Plus, GraduationCap, Grid, SlidersHorizontal, 
   HelpCircle, RefreshCw, AlertCircle, BookOpen, Layers,
   Calendar, FileText, Cloud, CloudOff, Award, ClipboardList,
-  ChevronLeft, ChevronRight, X, Trash2, ArrowUp
+  ChevronLeft, ChevronRight, X, Trash2, ArrowUp, Sparkles, Moon
 } from 'lucide-react';
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 
@@ -499,8 +499,13 @@ export default function App() {
           {selectedStudent && (
             <div className="hidden md:flex items-center gap-2 text-white/30 text-xs font-mono shrink-0">
               <span>/</span>
-              <span className="text-white bg-white/5 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1">
-                {selectedStudent.emoji} {selectedStudent.name}
+              <span className="text-white bg-white/5 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1.5 overflow-hidden">
+                {selectedStudent.emoji && (selectedStudent.emoji.startsWith('data:') || selectedStudent.emoji.startsWith('http')) ? (
+                  <img src={selectedStudent.emoji} alt="" className="w-4 h-4 rounded-full object-cover shrink-0 select-none" />
+                ) : (
+                  <span>{selectedStudent.emoji}</span>
+                )}
+                <span>{selectedStudent.name}</span>
               </span>
             </div>
           )}
@@ -535,10 +540,20 @@ export default function App() {
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
           <button
             onClick={() => setTheme(theme === 'gothic' ? 'cosmic' : 'gothic')}
-            className="p-2 rounded-xl text-white/40 hover:text-[#F4B5CD] hover:bg-white/5 transition-all duration-300 cursor-pointer text-sm flex items-center justify-center"
+            className="p-2 rounded-xl text-white/40 hover:text-[#F4B5CD] hover:bg-white/5 transition-all duration-300 cursor-pointer text-sm flex items-center justify-center gap-1.5 border border-transparent hover:border-white/10"
             title={theme === 'gothic' ? 'Активировать космическую тему' : 'Активировать черно-красную готическую тему'}
           >
-            {theme === 'gothic' ? '✦' : '🦇'}
+            {theme === 'gothic' ? (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-[#F4B5CD]" />
+                <span className="text-[9px] uppercase font-bold tracking-wider">Космос</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                <span className="text-[9px] uppercase font-bold tracking-wider">Готика</span>
+              </>
+            )}
           </button>
 
           <button
@@ -696,7 +711,7 @@ export default function App() {
                     <span>ПЛАНЫ ПЛАНЫ ПЛАНЫ</span>
                   </div>
                   
-                  <div className="bg-[#12131a]/30 border border-white/5 rounded-2xl p-4 flex-1 flex flex-col justify-center min-h-[192px]">
+                  <div className="bg-gradient-to-br from-[#12131a]/50 via-[#12131a]/60 to-[#F4B5CD]/[0.05] border border-white/5 rounded-2xl p-4 flex-1 flex flex-col justify-center min-h-[192px] shadow-lg">
                     {activeReminders.length === 0 ? (
                       <div className="text-center text-[11px] text-white/20 italic">
                         Ближайших дел и пробников нет. Нажмите 📅 в Сетке расписания, чтобы спланировать!
@@ -707,7 +722,7 @@ export default function App() {
                           const dateObj = new Date(rem.date);
                           const formatted = dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
                           return (
-                            <div key={rem.id} className="bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 p-2.5 rounded-xl flex items-start justify-between gap-3 text-left animate-fadeIn">
+                            <div key={rem.id} className="bg-gradient-to-r from-[#F4B5CD]/15 to-[#C3B4FC]/10 border border-[#F4B5CD]/25 hover:border-[#F4B5CD]/50 p-2.5 rounded-xl flex items-start justify-between gap-3 text-left animate-fadeIn hover:shadow-md transition duration-300">
                               <div className="space-y-0.5">
                                 <span className="text-[9px] font-mono font-bold text-[#F4B5CD] uppercase tracking-wider block">
                                   {formatted}
@@ -738,7 +753,7 @@ export default function App() {
                   <span>Быстрые действия</span>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-2 flex-1 items-stretch">
+                <div className="grid grid-cols-2 gap-2 flex-1 items-stretch bg-gradient-to-br from-[#12131a]/80 to-[#F4B5CD]/[0.05] p-3.5 rounded-2xl border border-white/5 shadow-xl">
                   <button
                     onClick={() => setShowGradingModal(true)}
                     className="py-1.5 px-3 bg-[#C3B4FC]/5 hover:bg-[#C3B4FC]/15 border border-[#C3B4FC]/15 hover:border-[#C3B4FC]/30 text-[#C3B4FC] text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
@@ -762,7 +777,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => setShowAddModal(true)}
-                    className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-[#F4B5CD]/20 text-[#F4B5CD]/80 text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
+                    className="py-1.5 px-3 bg-[#F4B5CD]/5 hover:bg-[#F4B5CD]/15 border border-[#F4B5CD]/10 hover:border-[#F4B5CD]/30 text-[#F4B5CD] text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
                   >
                     <Plus className="w-3.5 h-3.5 text-[#F4B5CD]/70 shrink-0" />
                     <span>Новый ученик</span>
@@ -865,7 +880,11 @@ export default function App() {
                             : 'bg-[#181920]/40 border-white/5 text-white/60 hover:bg-white/5 hover:text-white'
                         }`}
                       >
-                        <span className="text-xl shrink-0">{s.emoji}</span>
+                        {s.emoji && (s.emoji.startsWith('data:') || s.emoji.startsWith('http')) ? (
+                          <img src={s.emoji} alt="" className="w-5 h-5 rounded-full object-cover shrink-0 select-none" />
+                        ) : (
+                          <span className="text-xl shrink-0">{s.emoji}</span>
+                        )}
                         <div className="truncate">
                           <p className="text-xs font-medium truncate">{s.name}</p>
                           <p className="text-[9px] uppercase tracking-wider text-white/30 truncate">{s.subject}</p>

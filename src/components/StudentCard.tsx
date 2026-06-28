@@ -24,7 +24,7 @@ export const StudentCard: React.FC<StudentCardProps> = ({ student, onSelect }) =
   return (
     <div 
       onClick={onSelect}
-      className="group relative bg-[#12131a] hover:bg-[#171922] border border-white/5 hover:border-[#F4B5CD]/35 p-6 rounded-2xl transition-all duration-300 cursor-pointer hover:shadow-2xl flex flex-col justify-between"
+      className="group relative bg-gradient-to-br from-[#12131a] via-[#12131a] to-[#F4B5CD]/[0.02] hover:to-[#F4B5CD]/[0.08] border border-white/5 hover:border-[#F4B5CD]/35 p-6 rounded-2xl transition-all duration-300 cursor-pointer hover:shadow-2xl flex flex-col justify-between"
     >
       {/* Top Banner Cover Indicator */}
       <div 
@@ -36,7 +36,11 @@ export const StudentCard: React.FC<StudentCardProps> = ({ student, onSelect }) =
         {/* Header Info */}
         <div className="flex justify-between items-start pt-1 gap-2">
           <div className="flex items-center gap-3">
-            <span className="text-3xl select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">{student.emoji}</span>
+            {student.emoji && (student.emoji.startsWith('data:') || student.emoji.startsWith('http')) ? (
+              <img src={student.emoji} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded-full object-cover select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] shrink-0" />
+            ) : (
+              <span className="text-3xl select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">{student.emoji}</span>
+            )}
             <div>
               <h3 className="font-serif text-white text-lg group-hover:text-dusty-rose transition-colors duration-300">
                 {student.name}

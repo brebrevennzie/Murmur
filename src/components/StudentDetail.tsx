@@ -13,6 +13,17 @@ import {
   UploadCloud, FolderPlus
 } from 'lucide-react';
 
+const EMOJI_PRESETS = [
+  // Учёба, Предметы и Инструменты
+  '📚', '🎓', '🏫', '🎒', '📝', '💻', '📐', '🧪', '🧬', '🌍', '🎨', '🎭', '💡', '♟️',
+  // Ученики и Персонажи
+  '🙋‍♂️', '🙋‍♀️', '🧑‍🎓', '👨‍💻', '👩‍💻', '🤓', '😎', '😊', '✍️',
+  // Мудрые и Дружелюбные животные
+  '🦉', '🦊', '🦁', '🐯', '🐻', '🐼', '🐱', '🐰', '🐬',
+  // Достижения и Символы
+  '⭐', '✨', '🏆', '🥇', '💖', '🍀'
+];
+
 const getCheckedHomeworkForLesson = (lesson: Lesson, student: Student): string => {
   if (!student.lessons || student.lessons.length === 0) return '';
   const pastLessons = student.lessons
@@ -195,6 +206,62 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
     hourlyRate: student.hourlyRate,
   });
 
+  React.useEffect(() => {
+    if (!isEditingProfile) return;
+
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              if (event.target?.result) {
+                onUpdateStudent({
+                  ...student,
+                  emoji: event.target.result as string
+                });
+              }
+            };
+            reader.readAsDataURL(file);
+            e.preventDefault();
+          }
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+    };
+  }, [isEditingProfile, student, onUpdateStudent]);
+
+  const handleProfilePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (event.target?.result) {
+              onUpdateStudent({
+                ...student,
+                emoji: event.target.result as string
+              });
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  };
+
   const [isEditingZoom, setIsEditingZoom] = useState(false);
   const [tempZoomLink, setTempZoomLink] = useState(student.zoomLink || '');
 
@@ -273,6 +340,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
       notes: ''
     });
     setShowAddMock(false);
+    setHistorySubTab('mocks');
   };
 
   // REMOVE MOCK TEST
@@ -542,8 +610,12 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
         {/* Floating Header */}
         <div className="relative -mt-10 mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div className="flex items-start gap-4">
-            <span className="text-6xl p-3 bg-[#12131a] rounded-2xl border border-white/10 select-none shadow-2xl filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)]">
-              {student.emoji}
+            <span className="w-24 h-24 flex items-center justify-center bg-[#12131a] rounded-2xl border border-white/10 select-none shadow-2xl filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)] overflow-hidden shrink-0">
+              {student.emoji && (student.emoji.startsWith('data:') || student.emoji.startsWith('http')) ? (
+                <img src={student.emoji} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover rounded-2xl" />
+              ) : (
+                <span className="text-6xl leading-none">{student.emoji}</span>
+              )}
             </span>
             <div className="pt-8">
               <div className="flex items-center gap-2">
@@ -655,7 +727,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
 
         {/* Profile Details Edit Drawer Form */}
         {isEditingProfile && (
-          <div className="mb-6 bg-gradient-to-br from-[#F4B5CD]/[0.08] via-white/[0.03] to-white/[0.01] backdrop-blur-xl border border-white/10 p-5 shadow-2xl transition-all duration-300 rounded-2xl">
+          <div onPaste={handleProfilePaste} className="mb-6 bg-gradient-to-br from-[#F4B5CD]/[0.08] via-white/[0.03] to-white/[0.01] backdrop-blur-xl border border-white/10 p-5 shadow-2xl transition-all duration-300 rounded-2xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-serif text-[#F4B5CD] text-sm flex items-center gap-1.5">
                 <PenTool className="w-4 h-4" />
@@ -754,6 +826,83 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                   }}
                   className="w-full px-3 py-2 border border-white/5 bg-white/5 text-xs text-white focus:border-[#F4B5CD] focus:outline-none font-mono rounded-xl"
                 />
+              </div>
+
+              {/* Emoji Preset Selection and Upload / Paste Zone */}
+              <div className="md:col-span-2 space-y-1.5 pt-3 border-t border-white/5">
+                <label className="block text-[9px] uppercase tracking-widest font-extrabold text-[#F4B5CD]">
+                  👤 Аватар ученика
+                </label>
+                <div className="flex flex-col md:flex-row gap-4 items-stretch">
+                  {/* Preset List */}
+                  <div className="flex-1">
+                    <span className="block text-[8px] text-white/40 uppercase tracking-wider mb-1">Выберите эмодзи-аватар</span>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-black/25 rounded-xl border border-white/5 no-scrollbar">
+                      {EMOJI_PRESETS.map((em) => (
+                        <button
+                          key={em}
+                          type="button"
+                          onClick={() => onUpdateStudent({ ...student, emoji: em })}
+                          className={`text-lg p-1 transition select-none rounded-lg bg-[#0D0D0D] shrink-0 ${
+                            student.emoji === em ? 'ring-2 ring-[#F4B5CD] text-[#F4B5CD]' : 'border border-white/5 hover:bg-white/5 text-white'
+                          }`}
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Upload/Paste Zone */}
+                  <div 
+                    className="md:w-60 flex flex-col justify-between p-3.5 bg-black/25 border border-dashed border-white/10 rounded-xl relative hover:border-[#F4B5CD]/40 transition group"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file && file.type.startsWith('image/')) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          if (event.target?.result) {
+                            onUpdateStudent({ ...student, emoji: event.target.result as string });
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  >
+                    <div className="text-center space-y-1">
+                      <span className="block text-[9px] text-[#F4B5CD] font-bold uppercase tracking-wider">Своё фото / PNG</span>
+                      <p className="text-[9px] text-white/40 leading-normal">
+                        Перетащите файл, скопируйте картинку и вставьте <kbd className="bg-white/5 px-1 py-0.5 rounded text-white/50">Ctrl+V</kbd> или выберите на ПК
+                      </p>
+                    </div>
+                    
+                    <label className="mt-3 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-[9px] text-white font-bold uppercase tracking-widest rounded-lg cursor-pointer transition">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5 text-[#F4B5CD]">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      </svg>
+                      Обзор файлов
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              if (event.target?.result) {
+                                onUpdateStudent({ ...student, emoji: event.target.result as string });
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
               </div>
 
               {/* 20 Pastel Cover Presets selection */}
@@ -1612,14 +1761,24 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                             )}
                           </div>
 
-                          <div className="text-right shrink-0">
-                            <span className="text-lg font-mono font-bold text-[#F4B5CD] block">
-                              {exam.score}
-                              <span className="text-xs text-white/40 font-normal"> / {exam.maxScore}</span>
-                            </span>
-                            <span className="text-[10px] text-white/45 font-mono">
-                              ({Math.round(progressRatio * 100)}%)
-                            </span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <span className="text-lg font-mono font-bold text-[#F4B5CD] block">
+                                {exam.score}
+                                <span className="text-xs text-white/40 font-normal"> / {exam.maxScore}</span>
+                              </span>
+                              <span className="text-[10px] text-white/45 font-mono">
+                                ({Math.round(progressRatio * 100)}%)
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMock(exam.id)}
+                              className="p-1.5 bg-white/5 hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/20 text-white/40 hover:text-rose-450 rounded-xl transition-all duration-200 cursor-pointer"
+                              title="Удалить результат пробника"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       );
