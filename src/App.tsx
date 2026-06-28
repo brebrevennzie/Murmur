@@ -20,7 +20,7 @@ import {
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 import { StudentCabinetView } from './components/StudentCabinetView';
 import { TestsManager } from './components/TestsManager';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function App() {
@@ -203,6 +203,41 @@ export default function App() {
     reconnectSync,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
 
+  // Background listener to keep local storage cabinets in sync with Firestore in real-time
+  useEffect(() => {
+    const activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
+    if (!activeTutorId) return;
+
+    const q = collection(db, 'cabinets');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      try {
+        const loaded: Record<string, StudentCabinet> = {};
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as StudentCabinet;
+          if (data.tutorId === activeTutorId) {
+            loaded[data.id] = data;
+          }
+        });
+
+        // Merge loaded cabinets with what we have locally (just in case)
+        const stored = localStorage.getItem('tutor_local_cabinets');
+        let merged = { ...loaded };
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            merged = { ...parsed, ...loaded };
+          } catch (e) {}
+        }
+
+        localStorage.setItem('tutor_local_cabinets', JSON.stringify(merged));
+      } catch (err) {
+        console.error('Error in background cabinets listener:', err);
+      }
+    });
+
+    return unsubscribe;
+  }, [user]);
+
   // Self-healing hands-free auto-sync: Ensure every student has a cabinet generated, and all cabinets are uploaded to Firestore automatically
   useEffect(() => {
     if (students.length === 0) return;
@@ -235,23 +270,45 @@ export default function App() {
         for (let i = 0; i < updatedStudentsList.length; i++) {
           const student = updatedStudentsList[i];
           let cabinetId = student.cabinetId;
-          let cabinet = cabinetId ? localCabinets[cabinetId] : null;
 
-          // If student has cabinetId but it's not in our local map, let's try to find if any local cabinet belongs to this student
-          if (cabinetId && !cabinet) {
-            const foundCab = Object.values(localCabinets).find(c => c.studentId === student.id);
-            if (foundCab) {
-              cabinet = foundCab;
-              cabinetId = foundCab.id;
-              updatedStudentsList[i] = { ...student, cabinetId };
-              wasStudentsUpdated = true;
+          // CRITICAL REQUIREMENT: If the student ALREADY has a cabinetId, PRESERVE IT!
+          // NEVER change, overwrite, or regenerate it, as doing so breaks student access.
+          if (cabinetId) {
+            // Check if we have this cabinet in local storage
+            let cabinetObj = localCabinets[cabinetId];
+            if (cabinetObj) {
+              // Ensure tutorId and studentName are in sync if we have the full cabinet object
+              let isCabinetModified = false;
+              if (cabinetObj.tutorId !== activeTutorId) {
+                cabinetObj.tutorId = activeTutorId;
+                isCabinetModified = true;
+              }
+              if (cabinetObj.studentName !== student.name) {
+                cabinetObj.studentName = student.name;
+                isCabinetModified = true;
+              }
+              if (isCabinetModified) {
+                localCabinets[cabinetId] = cabinetObj;
+                // Save immediately and upload
+                const finalCab = { ...cabinetObj };
+                cabinetPromises.push(
+                  (async () => {
+                    try {
+                      await setDoc(doc(db, 'cabinets', finalCab.id), finalCab, { merge: true });
+                    } catch (err) {
+                      console.error(`Failed to sync cabinet ${finalCab.id} to Firestore:`, err);
+                    }
+                  })()
+                );
+              }
             }
+            continue; // Skip generation or placeholder logic for this student
           }
 
-          // If no cabinet exists at all, generate one!
-          if (!cabinetId || !cabinet) {
+          // If no cabinetId exists AT ALL on the student, generate a brand new one!
+          if (!cabinetId) {
             cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
-            cabinet = {
+            const newCabinet: StudentCabinet = {
               id: cabinetId,
               studentId: student.id,
               studentName: student.name,
@@ -261,41 +318,23 @@ export default function App() {
             };
 
             // Save to local map
-            localCabinets[cabinetId] = cabinet;
+            localCabinets[cabinetId] = newCabinet;
             
             // Mark student to be updated with the new cabinetId
             updatedStudentsList[i] = { ...student, cabinetId };
             wasStudentsUpdated = true;
-          }
 
-          // Ensure tutorId and studentName are in sync
-          let updatedCabinetObj = { ...cabinet };
-          let isCabinetModified = false;
-
-          if (updatedCabinetObj.tutorId !== activeTutorId) {
-            updatedCabinetObj.tutorId = activeTutorId;
-            isCabinetModified = true;
+            // Upload the newly generated cabinet
+            cabinetPromises.push(
+              (async () => {
+                try {
+                  await setDoc(doc(db, 'cabinets', cabinetId), newCabinet);
+                } catch (err) {
+                  console.error(`Failed to sync newly created cabinet ${cabinetId} to Firestore:`, err);
+                }
+              })()
+            );
           }
-          if (updatedCabinetObj.studentName !== student.name) {
-            updatedCabinetObj.studentName = student.name;
-            isCabinetModified = true;
-          }
-
-          if (isCabinetModified) {
-            localCabinets[cabinetId] = updatedCabinetObj;
-          }
-
-          // Queue Firestore upload for this cabinet
-          const finalCab = { ...updatedCabinetObj };
-          cabinetPromises.push(
-            (async () => {
-              try {
-                await setDoc(doc(db, 'cabinets', finalCab.id), finalCab, { merge: true });
-              } catch (err) {
-                console.error(`Failed to sync cabinet ${finalCab.id} to Firestore:`, err);
-              }
-            })()
-          );
         }
 
         // Save local cabinets if modified or new
@@ -307,7 +346,9 @@ export default function App() {
         }
 
         // Run all Firestore writes in the background
-        await Promise.all(cabinetPromises);
+        if (cabinetPromises.length > 0) {
+          await Promise.all(cabinetPromises);
+        }
       } catch (e) {
         console.error('Error auto-healing/syncing local cabinets to Firestore:', e);
       }
