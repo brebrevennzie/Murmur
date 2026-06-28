@@ -50,24 +50,35 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
 
   // 1. Listen or Fetch Cabinets from Firestore in real-time
   useEffect(() => {
-    if (!user) {
-      // Local/Guest mode - load from localStorage
-      try {
-        const stored = localStorage.getItem('tutor_local_cabinets');
-        if (stored) setCabinets(JSON.parse(stored));
-      } catch {}
-      return;
-    }
-
     setLoadingCabinets(true);
-    // Fetch all cabinets where tutorId matches user.uid
+    
+    // Determine target tutorId for syncing
+    const activeTutorId = user ? user.uid : (() => {
+      let id = localStorage.getItem('guest_tutor_id');
+      if (!id) {
+        id = `guest_${Math.random().toString(36).substring(2, 11)}`;
+        localStorage.setItem('guest_tutor_id', id);
+      }
+      return id;
+    })();
+
     const q = collection(db, 'cabinets');
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded: Record<string, StudentCabinet> = {};
+      
+      // Load local baseline first to avoid wiping out offline pending items
+      try {
+        const stored = localStorage.getItem('tutor_local_cabinets');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          Object.assign(loaded, parsed);
+        }
+      } catch {}
+
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as StudentCabinet;
-        if (data.tutorId === user.uid) {
+        if (data.tutorId === activeTutorId) {
           loaded[data.id] = data;
         }
       });
@@ -79,6 +90,12 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     }, (err) => {
       console.error('Error fetching cabinets:', err);
       setLoadingCabinets(false);
+      
+      // Fallback to local storage if offline or blocked
+      try {
+        const stored = localStorage.getItem('tutor_local_cabinets');
+        if (stored) setCabinets(JSON.parse(stored));
+      } catch {}
     });
 
     return () => unsubscribe();
@@ -182,37 +199,47 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
   // Create cabinet for student
   const handleCreateCabinet = async (student: Student) => {
     const cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
+    const activeTutorId = user ? user.uid : (() => {
+      let id = localStorage.getItem('guest_tutor_id');
+      if (!id) {
+        id = `guest_${Math.random().toString(36).substring(2, 11)}`;
+        localStorage.setItem('guest_tutor_id', id);
+      }
+      return id;
+    })();
+
     const newCabinet: StudentCabinet = {
       id: cabinetId,
       studentId: student.id,
       studentName: student.name,
-      tutorId: user ? user.uid : 'local_tutor',
+      tutorId: activeTutorId,
       createdAt: new Date().toISOString(),
       assignedTests: []
     };
 
+    // 1. Instantly update local state and storage for 100% responsive UI
+    const localCabs = { ...cabinets, [cabinetId]: newCabinet };
+    setCabinets(localCabs);
     try {
-      if (user) {
-        // Write to Firestore
-        await setDoc(doc(db, 'cabinets', cabinetId), newCabinet);
-      } else {
-        // Save locally
-        const localCabs = { ...cabinets, [cabinetId]: newCabinet };
-        setCabinets(localCabs);
-        localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
-      }
+      localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
+    } catch (e) {
+      console.error('Local storage error:', e);
+    }
 
-      // Link in student object
-      const updatedStudents = students.map(s => {
-        if (s.id === student.id) {
-          return { ...s, cabinetId };
-        }
-        return s;
-      });
-      onUpdateStudents(updatedStudents);
+    // Link in student object
+    const updatedStudents = students.map(s => {
+      if (s.id === student.id) {
+        return { ...s, cabinetId };
+      }
+      return s;
+    });
+    onUpdateStudents(updatedStudents);
+
+    // 2. Perform Firestore write in background
+    try {
+      await setDoc(doc(db, 'cabinets', cabinetId), newCabinet);
     } catch (err) {
-      console.error('Failed to create student cabinet:', err);
-      alert('Ошибка создания кабинета. Проверьте интернет-соединение.');
+      console.error('Failed to sync new cabinet to Firestore cloud:', err);
     }
   };
 
@@ -222,29 +249,32 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       return;
     }
 
+    // 1. Instantly update local state and storage
+    const localCabs = { ...cabinets };
+    delete localCabs[cabinetId];
+    setCabinets(localCabs);
     try {
-      if (user) {
-        await deleteDoc(doc(db, 'cabinets', cabinetId));
-      } else {
-        const localCabs = { ...cabinets };
-        delete localCabs[cabinetId];
-        setCabinets(localCabs);
-        localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
-      }
+      localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
+    } catch (e) {
+      console.error('Local storage error:', e);
+    }
 
-      // Unlink in student object
-      const updatedStudents = students.map(s => {
-        if (s.id === student.id) {
-          const copy = { ...s };
-          delete copy.cabinetId;
-          return copy;
-        }
-        return s;
-      });
-      onUpdateStudents(updatedStudents);
+    // Unlink in student object
+    const updatedStudents = students.map(s => {
+      if (s.id === student.id) {
+        const copy = { ...s };
+        delete copy.cabinetId;
+        return copy;
+      }
+      return s;
+    });
+    onUpdateStudents(updatedStudents);
+
+    // 2. Perform Firestore delete in background
+    try {
+      await deleteDoc(doc(db, 'cabinets', cabinetId));
     } catch (err) {
-      console.error('Failed to delete student cabinet:', err);
-      alert('Ошибка удаления кабинета.');
+      console.error('Failed to delete student cabinet from cloud:', err);
     }
   };
 
@@ -404,21 +434,24 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       assignedTests: [assignedInstance, ...(cabinet.assignedTests || [])]
     };
 
+    // 1. Instantly update local state & storage for fast UI feedback
+    const localCabs = { ...cabinets, [assignTargetCabinetId]: updatedCabinet };
+    setCabinets(localCabs);
     try {
-      if (user) {
-        await setDoc(doc(db, 'cabinets', assignTargetCabinetId), updatedCabinet);
-      } else {
-        const localCabs = { ...cabinets, [assignTargetCabinetId]: updatedCabinet };
-        setCabinets(localCabs);
-        localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
-      }
+      localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
+    } catch (e) {
+      console.error('Local storage write error:', e);
+    }
 
-      setShowAssignModal(false);
-      setAssignTargetCabinetId(null);
-      alert(`Тест "${template.title}" успешно назначен ученику ${cabinet.studentName}!`);
+    setShowAssignModal(false);
+    setAssignTargetCabinetId(null);
+    alert(`Тест "${template.title}" успешно назначен ученику ${cabinet.studentName}!`);
+
+    // 2. Write to Firestore in background
+    try {
+      await setDoc(doc(db, 'cabinets', assignTargetCabinetId), updatedCabinet);
     } catch (err) {
-      console.error('Failed to assign test:', err);
-      alert('Ошибка при назначении теста.');
+      console.error('Failed to assign test in cloud:', err);
     }
   };
 
