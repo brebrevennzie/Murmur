@@ -18,10 +18,20 @@ import {
   ChevronLeft, ChevronRight, X, Trash2, ArrowUp, Sparkles, Moon
 } from 'lucide-react';
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
+import { StudentCabinetView } from './components/StudentCabinetView';
+import { TestsManager } from './components/TestsManager';
 
 export default function App() {
+  const queryParams = new URLSearchParams(window.location.search);
+  const cabinetId = queryParams.get('cabinet');
+
+  if (cabinetId) {
+    return <StudentCabinetView cabinetId={cabinetId} />;
+  }
+
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tests'>('dashboard');
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   // Dynamic Theme (gothic or cosmic)
@@ -514,9 +524,10 @@ export default function App() {
               onClick={() => {
                 setSelectedStudentId(null);
                 setFilterDebtOnly(false);
+                setActiveTab('dashboard');
               }}
               className={`cursor-pointer transition duration-200 pb-0.5 ${
-                !selectedStudentId && !filterDebtOnly 
+                !selectedStudentId && !filterDebtOnly && activeTab === 'dashboard'
                   ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
                   : 'text-white/40 hover:text-white'
               }`}
@@ -527,6 +538,21 @@ export default function App() {
               onClick={() => {
                 setSelectedStudentId(null);
                 setFilterDebtOnly(false);
+                setActiveTab('tests');
+              }}
+              className={`cursor-pointer transition duration-200 pb-0.5 ${
+                !selectedStudentId && activeTab === 'tests'
+                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
+                  : 'text-white/40 hover:text-white'
+              }`}
+            >
+              Тесты
+            </button>
+            <button
+              onClick={() => {
+                setSelectedStudentId(null);
+                setFilterDebtOnly(false);
+                setActiveTab('dashboard');
                 setTimeout(() => {
                   document.getElementById('students-catalog')?.scrollIntoView({ behavior: 'smooth' });
                 }, 100);
@@ -622,6 +648,12 @@ export default function App() {
             </div>
           </div>
         </div>
+      ) : activeTab === 'tests' ? (
+        <TestsManager 
+          students={students}
+          onUpdateStudents={handleUpdateStudents}
+          user={user}
+        />
       ) : (
         /* Home Workspace view */
         <div className="animate-fadeIn opacity-90 text-white/85">

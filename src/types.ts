@@ -72,6 +72,7 @@ export interface Student {
   oneTimeReschedules?: OneTimeReschedule[];
   zoomLink?: string;
   vocab?: string[]; // Spanish dictionary words
+  cabinetId?: string; // ID of the linked Student Cabinet
   program?: {
     id: string;
     name: string;
@@ -222,4 +223,52 @@ export const COVER_PRESETS = [
     value: 'linear-gradient(135deg, rgba(251, 113, 133, 0.12) 0%, rgba(253, 164, 175, 0.06) 100%)' 
   },
 ];
+
+export interface TestQuestion {
+  id: string;
+  type: 'short' | 'single' | 'multiple' | 'matching';
+  text: string; // Question label, e.g. "Задание 1"
+  correctAnswer?: string; // For short answer: "1234/синоним"
+  options?: string[]; // For single/multiple choice
+  correctOptions?: boolean[]; // For single/multiple choice (indexes mapped to booleans)
+  matchingLeft?: string[]; // For matching left items
+  matchingRight?: string[]; // For matching right items
+  matchingAnswers?: number[]; // For matching leftIndex -> rightIndex
+}
+
+export interface TestTemplate {
+  id: string;
+  title: string;
+  type: 'OGE' | 'EGE';
+  createdAt: string;
+  questions: TestQuestion[];
+}
+
+export interface AssignedTest {
+  id: string;
+  templateId: string;
+  title: string;
+  type: 'OGE' | 'EGE';
+  questions: TestQuestion[];
+  status: 'pending' | 'submitted';
+  assignedAt: string;
+  submittedAt?: string;
+  timeSpent?: number; // seconds
+  tabSwitches?: number;
+  answers?: Record<string, any>; // questionId -> response
+  wantToDiscuss?: Record<string, boolean>; // questionId -> wantToDiscuss
+  score?: number;
+  totalQuestions?: number;
+  checkedResults?: Record<string, boolean>; // questionId -> isCorrect
+}
+
+export interface StudentCabinet {
+  id: string;
+  studentId: string;
+  studentName: string;
+  tutorId: string;
+  createdAt: string;
+  assignedTests: AssignedTest[];
+}
+
 
