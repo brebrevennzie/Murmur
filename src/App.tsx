@@ -203,36 +203,117 @@ export default function App() {
     reconnectSync,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
 
-  // Self-healing auto-sync: Ensure all local student cabinets are uploaded to Firestore in the background
+  // Self-healing hands-free auto-sync: Ensure every student has a cabinet generated, and all cabinets are uploaded to Firestore automatically
   useEffect(() => {
-    const syncLocalCabinetsToCloud = async () => {
-      try {
-        const stored = localStorage.getItem('tutor_local_cabinets');
-        if (!stored) return;
-        const parsed = JSON.parse(stored) as Record<string, StudentCabinet>;
-        
-        const activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
-        if (!activeTutorId) return;
+    if (students.length === 0) return;
 
-        const promises = Object.values(parsed).map(async (cab) => {
-          const isActive = students.some(s => s.cabinetId === cab.id || s.id === cab.studentId);
-          if (isActive || cab.tutorId === activeTutorId) {
-            let updatedCab = { ...cab };
-            if (updatedCab.tutorId !== activeTutorId) {
-              updatedCab.tutorId = activeTutorId;
-            }
-            await setDoc(doc(db, 'cabinets', updatedCab.id), updatedCab, { merge: true });
+    const ensureCabinetsAndSync = async () => {
+      try {
+        let updatedStudentsList = [...students];
+        let wasStudentsUpdated = false;
+
+        // Ensure activeTutorId exists
+        let activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
+        if (!activeTutorId) {
+          activeTutorId = `guest_${Math.random().toString(36).substring(2, 11)}`;
+          localStorage.setItem('guest_tutor_id', activeTutorId);
+        }
+
+        // Load local cabinets map
+        const stored = localStorage.getItem('tutor_local_cabinets');
+        let localCabinets: Record<string, StudentCabinet> = {};
+        if (stored) {
+          try {
+            localCabinets = JSON.parse(stored);
+          } catch (e) {
+            console.error('Error parsing local cabinets:', e);
           }
-        });
-        await Promise.all(promises);
+        }
+
+        const cabinetPromises: Promise<void>[] = [];
+
+        for (let i = 0; i < updatedStudentsList.length; i++) {
+          const student = updatedStudentsList[i];
+          let cabinetId = student.cabinetId;
+          let cabinet = cabinetId ? localCabinets[cabinetId] : null;
+
+          // If student has cabinetId but it's not in our local map, let's try to find if any local cabinet belongs to this student
+          if (cabinetId && !cabinet) {
+            const foundCab = Object.values(localCabinets).find(c => c.studentId === student.id);
+            if (foundCab) {
+              cabinet = foundCab;
+              cabinetId = foundCab.id;
+              updatedStudentsList[i] = { ...student, cabinetId };
+              wasStudentsUpdated = true;
+            }
+          }
+
+          // If no cabinet exists at all, generate one!
+          if (!cabinetId || !cabinet) {
+            cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
+            cabinet = {
+              id: cabinetId,
+              studentId: student.id,
+              studentName: student.name,
+              tutorId: activeTutorId,
+              createdAt: new Date().toISOString(),
+              assignedTests: []
+            };
+
+            // Save to local map
+            localCabinets[cabinetId] = cabinet;
+            
+            // Mark student to be updated with the new cabinetId
+            updatedStudentsList[i] = { ...student, cabinetId };
+            wasStudentsUpdated = true;
+          }
+
+          // Ensure tutorId and studentName are in sync
+          let updatedCabinetObj = { ...cabinet };
+          let isCabinetModified = false;
+
+          if (updatedCabinetObj.tutorId !== activeTutorId) {
+            updatedCabinetObj.tutorId = activeTutorId;
+            isCabinetModified = true;
+          }
+          if (updatedCabinetObj.studentName !== student.name) {
+            updatedCabinetObj.studentName = student.name;
+            isCabinetModified = true;
+          }
+
+          if (isCabinetModified) {
+            localCabinets[cabinetId] = updatedCabinetObj;
+          }
+
+          // Queue Firestore upload for this cabinet
+          const finalCab = { ...updatedCabinetObj };
+          cabinetPromises.push(
+            (async () => {
+              try {
+                await setDoc(doc(db, 'cabinets', finalCab.id), finalCab, { merge: true });
+              } catch (err) {
+                console.error(`Failed to sync cabinet ${finalCab.id} to Firestore:`, err);
+              }
+            })()
+          );
+        }
+
+        // Save local cabinets if modified or new
+        localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabinets));
+
+        // If any student was assigned a new cabinetId, trigger updateStudents to propagate
+        if (wasStudentsUpdated) {
+          handleUpdateStudents(updatedStudentsList);
+        }
+
+        // Run all Firestore writes in the background
+        await Promise.all(cabinetPromises);
       } catch (e) {
         console.error('Error auto-healing/syncing local cabinets to Firestore:', e);
       }
     };
 
-    if (students.length > 0) {
-      syncLocalCabinetsToCloud();
-    }
+    ensureCabinetsAndSync();
   }, [students, user]);
 
   const updateTimestamp = () => {

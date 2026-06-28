@@ -114,8 +114,8 @@ export function StudentCabinetView({ cabinetId }: StudentCabinetViewProps) {
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 max-w-md text-left text-xs text-amber-800 mb-6 space-y-2">
           <p className="font-semibold">💡 Как решить эту проблему:</p>
           <ul className="list-disc pl-4 space-y-1">
-            <li>Если ваш личный кабинет был создан недавно, пожалуйста, <strong>попросите преподавателя открыть панель управления тестами</strong> на его устройстве. Это автоматически загрузит ваш кабинет из его браузера в облачную базу данных.</li>
             <li>Убедитесь, что вы перешли по полной ссылке, предоставленной вашим преподавателем, без лишних символов на конце.</li>
+            <li>Если проблема повторяется, попросите преподавателя отправить вам ссылку повторно.</li>
           </ul>
         </div>
 

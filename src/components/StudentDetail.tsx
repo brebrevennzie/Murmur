@@ -10,7 +10,7 @@ import {
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
   HelpCircle, PenTool, ClipboardList, TrendingUp, AlertCircle,
   Video, ExternalLink, Link, X, Trash, Maximize2, Minimize2, Paperclip,
-  UploadCloud, FolderPlus
+  UploadCloud, FolderPlus, Copy, Check
 } from 'lucide-react';
 
 const EMOJI_PRESETS = [
@@ -279,6 +279,17 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
       zoomLink: formattedLink
     });
     setIsEditingZoom(false);
+  };
+
+  const [copiedCabinet, setCopiedCabinet] = useState(false);
+  const handleCopyCabinetLink = () => {
+    if (!student.cabinetId) return;
+    const origin = window.location.origin;
+    const link = `${origin}${window.location.pathname}?cabinet=${student.cabinetId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedCabinet(true);
+      setTimeout(() => setCopiedCabinet(false), 3000);
+    });
   };
 
   // Update logic triggers
@@ -646,82 +657,113 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             </div>
           </div>
 
-          {/* Zoom Meeting Link Card */}
-          <div className="bg-gradient-to-br from-[#1E293B]/60 via-white/[0.02] to-white/[0.01] backdrop-blur-xl p-4 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl shadow-xl min-w-[280px]">
-            {isEditingZoom ? (
-              <div className="w-full space-y-2">
-                <span className="text-[10px] text-[#F4B5CD] uppercase font-semibold tracking-wider block font-sans">Ссылка на конференцию Zoom:</span>
-                <div className="flex gap-2 w-full">
-                  <input
-                    type="text"
-                    value={tempZoomLink}
-                    onChange={(e) => setTempZoomLink(e.target.value)}
-                    placeholder="Вставьте ссылку на Zoom..."
-                    className="flex-grow text-xs px-3 py-1.5 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-lg font-sans"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveZoomLink();
-                    }}
-                  />
-                  <button
-                    onClick={handleSaveZoomLink}
-                    className="py-1 px-3 bg-lavender/10 hover:bg-lavender/20 text-lavender border border-lavender/30 text-[10px] font-bold uppercase tracking-wider rounded-lg transition shrink-0 cursor-pointer"
-                  >
-                    OK
-                  </button>
-                  <button
-                    onClick={() => {
-                      setTempZoomLink(student.zoomLink || '');
-                      setIsEditingZoom(false);
-                    }}
-                    className="py-1 px-3 bg-white/5 hover:bg-white/10 text-white/60 border border-white/10 text-[10px] font-bold uppercase tracking-wider rounded-lg transition shrink-0 cursor-pointer"
-                  >
-                    Отмена
-                  </button>
+          {/* Action Cards (Zoom and Student Cabinet) */}
+          <div className="flex flex-col lg:flex-row gap-3 xl:gap-4 shrink-0 max-w-full items-stretch">
+            {/* Zoom Meeting Link Card */}
+            <div className="bg-gradient-to-br from-[#1E293B]/60 via-white/[0.02] to-white/[0.01] backdrop-blur-xl p-4 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl shadow-xl min-w-[280px]">
+              {isEditingZoom ? (
+                <div className="w-full space-y-2">
+                  <span className="text-[10px] text-[#F4B5CD] uppercase font-semibold tracking-wider block font-sans">Ссылка на конференцию Zoom:</span>
+                  <div className="flex gap-2 w-full">
+                    <input
+                      type="text"
+                      value={tempZoomLink}
+                      onChange={(e) => setTempZoomLink(e.target.value)}
+                      placeholder="Вставьте ссылку на Zoom..."
+                      className="flex-grow text-xs px-3 py-1.5 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-lg font-sans"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveZoomLink();
+                      }}
+                    />
+                    <button
+                      onClick={handleSaveZoomLink}
+                      className="py-1 px-3 bg-lavender/10 hover:bg-lavender/20 text-lavender border border-lavender/30 text-[10px] font-bold uppercase tracking-wider rounded-lg transition shrink-0 cursor-pointer"
+                    >
+                      OK
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTempZoomLink(student.zoomLink || '');
+                        setIsEditingZoom(false);
+                      }}
+                      className="py-1 px-3 bg-white/5 hover:bg-white/10 text-white/60 border border-white/10 text-[10px] font-bold uppercase tracking-wider rounded-lg transition shrink-0 cursor-pointer"
+                    >
+                      Отмена
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <span className="text-[9px] text-[#F4B5CD] uppercase font-bold tracking-widest block font-sans">Конференция Zoom</span>
-                  <div className="mt-1 flex items-center gap-2">
-                    {student.zoomLink ? (
+              ) : (
+                <>
+                  <div>
+                    <span className="text-[9px] text-[#F4B5CD] uppercase font-bold tracking-widest block font-sans">Конференция Zoom</span>
+                    <div className="mt-1 flex items-center gap-2">
+                      {student.zoomLink ? (
+                        <a
+                          href={student.zoomLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-white hover:text-[#F4B5CD] underline font-medium truncate max-w-[220px] inline-flex items-center gap-1 transition"
+                        >
+                          <Video className="w-3.5 h-3.5 shrink-0 text-[#F4B5CD]" />
+                          <span className="truncate">{student.zoomLink}</span>
+                          <ExternalLink className="w-3 h-3 text-white/40 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-white/40 font-sans">Ссылка не настроена</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {student.zoomLink && (
                       <a
                         href={student.zoomLink}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs text-white hover:text-[#F4B5CD] underline font-medium truncate max-w-[220px] inline-flex items-center gap-1 transition"
+                        className="py-1.5 px-3 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/30 text-[#F4B5CD] text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
                       >
-                        <Video className="w-3.5 h-3.5 shrink-0 text-[#F4B5CD]" />
-                        <span className="truncate">{student.zoomLink}</span>
-                        <ExternalLink className="w-3 h-3 text-white/40 shrink-0" />
+                        <Video className="w-3.5 h-3.5" />
+                        Войти
                       </a>
-                    ) : (
-                      <span className="text-xs text-white/40 font-sans">Ссылка не настроена</span>
                     )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {student.zoomLink && (
-                    <a
-                      href={student.zoomLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="py-1.5 px-3 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/30 text-[#F4B5CD] text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    <button
+                      onClick={() => setIsEditingZoom(true)}
+                      className="py-1.5 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-[10px] uppercase font-bold tracking-wider transition rounded-lg flex items-center gap-1 cursor-pointer"
                     >
-                      <Video className="w-3.5 h-3.5" />
-                      Войти
-                    </a>
-                  )}
-                  <button
-                    onClick={() => setIsEditingZoom(true)}
-                    className="py-1.5 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-[10px] uppercase font-bold tracking-wider transition rounded-lg flex items-center gap-1 cursor-pointer"
-                  >
-                    {student.zoomLink ? 'Изменить' : 'Вставить ссылку'}
-                  </button>
-                </div>
-              </>
-            )}
+                      {student.zoomLink ? 'Изменить' : 'Вставить ссылку'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Student Personal Cabinet Card */}
+            <div className="bg-gradient-to-br from-[#F4B5CD]/[0.06] via-white/[0.02] to-white/[0.01] backdrop-blur-xl p-4 border border-[#F4B5CD]/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl shadow-xl min-w-[280px]">
+              <div>
+                <span className="text-[9px] text-[#F4B5CD] uppercase font-bold tracking-widest block font-sans">Личный кабинет ученика</span>
+                <p className="text-xs text-white/70 font-sans mt-1">Доступ по прямой ссылке без пароля</p>
+              </div>
+              <button
+                onClick={handleCopyCabinetLink}
+                className={`py-1.5 px-3.5 border text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm ${
+                  copiedCabinet
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 text-[#F4B5CD] border-[#F4B5CD]/30'
+                }`}
+              >
+                {copiedCabinet ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 animate-pulse" />
+                    Ссылка скопирована
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    Поделиться кабинетом
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
