@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, TestTemplate, TestQuestion, StudentCabinet, AssignedTest } from '../types';
@@ -48,7 +48,13 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // 1. Listen or Fetch Cabinets from Firestore in real-time
+  // Track active students list in ref to allow stable onSnapshot without frequent re-subscribes
+  const studentsRef = useRef(students);
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
+
+  // 1. Listen or Fetch Cabinets from Firestore in real-time with self-healing auto-sync
   useEffect(() => {
     setLoadingCabinets(true);
     
@@ -66,22 +72,80 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded: Record<string, StudentCabinet> = {};
+      const cloudCabinetIds = new Set<string>();
       
-      // Load local baseline first to avoid wiping out offline pending items
-      try {
-        const stored = localStorage.getItem('tutor_local_cabinets');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          Object.assign(loaded, parsed);
-        }
-      } catch {}
-
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as StudentCabinet;
         if (data.tutorId === activeTutorId) {
           loaded[data.id] = data;
+          cloudCabinetIds.add(data.id);
         }
       });
+
+      // Load local baseline, auto-migrate, and find unsynced ones
+      try {
+        const stored = localStorage.getItem('tutor_local_cabinets');
+        if (stored) {
+          const parsed = JSON.parse(stored) as Record<string, StudentCabinet>;
+          const unsyncedCabinets: StudentCabinet[] = [];
+          const activeStudents = studentsRef.current;
+
+          Object.entries(parsed).forEach(([id, cab]) => {
+            // Check if this cabinet is owned by any student in the active list
+            const isOwnedByActiveStudent = activeStudents.some(
+              s => s.cabinetId === id || s.id === cab.studentId
+            );
+
+            if (isOwnedByActiveStudent) {
+              let updatedCab = { ...cab };
+              let modified = false;
+
+              // Rule 1: If tutor logged in/out, migrate the tutorId to current activeTutorId
+              if (updatedCab.tutorId !== activeTutorId) {
+                updatedCab.tutorId = activeTutorId;
+                modified = true;
+              }
+
+              // Rule 2: If the cabinet studentName has changed, keep it updated
+              const studentObj = activeStudents.find(s => s.id === updatedCab.studentId);
+              if (studentObj && studentObj.name !== updatedCab.studentName) {
+                updatedCab.studentName = studentObj.name;
+                modified = true;
+              }
+
+              if (modified || !cloudCabinetIds.has(id)) {
+                unsyncedCabinets.push(updatedCab);
+              }
+
+              loaded[id] = updatedCab;
+            } else if (cab.tutorId === activeTutorId) {
+              // Cabinet belongs to this tutor but maybe not active in current screen list
+              if (!cloudCabinetIds.has(id)) {
+                unsyncedCabinets.push(cab);
+              }
+              if (!loaded[id]) {
+                loaded[id] = cab;
+              }
+            }
+          });
+
+          // Auto-heal: background sync missing or migrated cabinets to Firestore
+          if (unsyncedCabinets.length > 0) {
+            console.log(`Auto-healing/syncing ${unsyncedCabinets.length} local cabinets to Firestore...`);
+            unsyncedCabinets.forEach(async (cab) => {
+              try {
+                await setDoc(doc(db, 'cabinets', cab.id), cab);
+                console.log(`Successfully auto-healed cabinet ${cab.id} in cloud.`);
+              } catch (e) {
+                console.error(`Failed to auto-heal cabinet ${cab.id}:`, e);
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error during local cabinet loading & healing:', e);
+      }
+
       setCabinets(loaded);
       setLoadingCabinets(false);
       
