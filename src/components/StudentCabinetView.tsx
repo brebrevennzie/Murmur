@@ -34,7 +34,8 @@ export function StudentCabinetView({ cabinetId }: StudentCabinetViewProps) {
   // 1. Fetch Cabinet real-time from Firestore
   useEffect(() => {
     setLoading(true);
-    const docRef = doc(db, 'cabinets', cabinetId);
+    const cleanId = cabinetId.trim();
+    const docRef = doc(db, 'cabinets', cleanId);
     
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -102,14 +103,33 @@ export function StudentCabinetView({ cabinetId }: StudentCabinetViewProps) {
   if (error || !cabinet) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-800 text-center">
-        <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600 mb-4">
+        <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600 mb-4 animate-pulse">
           <ShieldAlert className="w-8 h-8" />
         </div>
         <h2 className="text-xl font-bold mb-2">Доступ ограничен</h2>
-        <p className="text-sm text-slate-500 max-w-md mb-6">
+        <p className="text-sm text-slate-500 max-w-md mb-4">
           {error || 'Указана неверная или устаревшая ссылка.'}
         </p>
-        <p className="text-xs text-slate-400">Пожалуйста, свяжитесь со своим преподавателем, чтобы получить актуальную ссылку.</p>
+        
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 max-w-md text-left text-xs text-amber-800 mb-6 space-y-2">
+          <p className="font-semibold">💡 Как решить эту проблему:</p>
+          <ul className="list-disc pl-4 space-y-1">
+            <li>Если ваш личный кабинет был создан недавно, пожалуйста, <strong>попросите преподавателя открыть панель управления тестами</strong> на его устройстве. Это автоматически загрузит ваш кабинет из его браузера в облачную базу данных.</li>
+            <li>Убедитесь, что вы перешли по полной ссылке, предоставленной вашим преподавателем, без лишних символов на конце.</li>
+          </ul>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-xl text-xs font-semibold shadow-md transition duration-150 flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
+            Проверить снова
+          </button>
+          
+          <p className="text-[10px] text-slate-400 sm:ml-2">Пожалуйста, свяжитесь со своим преподавателем, чтобы получить актуальную ссылку.</p>
+        </div>
       </div>
     );
   }

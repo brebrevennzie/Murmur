@@ -25,7 +25,8 @@ import { db } from './firebase';
 
 export default function App() {
   const queryParams = new URLSearchParams(window.location.search);
-  const cabinetId = queryParams.get('cabinet');
+  const rawCabinetId = queryParams.get('cabinet');
+  const cabinetId = rawCabinetId ? rawCabinetId.trim() : null;
 
   if (cabinetId) {
     return <StudentCabinetView cabinetId={cabinetId} />;

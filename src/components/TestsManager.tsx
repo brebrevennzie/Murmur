@@ -643,13 +643,23 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
             <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-6 relative overflow-hidden shadow-2xl">
               <div className="absolute inset-0 bg-radial-at-t from-[#C3B4FC]/3 via-transparent to-transparent pointer-events-none" />
               
-              <h3 className="font-serif text-lg flex items-center gap-2 mb-2">
-                <User className="w-5 h-5 text-[#C3B4FC]" />
-                Личные кабинеты учеников
-              </h3>
-              <p className="text-[11px] text-white/50 leading-relaxed mb-6">
-                🔓 Ученикам <strong>не требуется регистрация или авторизация через Google</strong>. Они мгновенно переходят в свой личный кабинет по скопированной ссылке.
-              </p>
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 pb-4 border-b border-white/5">
+                <div className="space-y-1">
+                  <h3 className="font-serif text-lg flex items-center gap-2">
+                    <User className="w-5 h-5 text-[#C3B4FC]" />
+                    Личные кабинеты учеников
+                  </h3>
+                  <p className="text-[11px] text-white/50 leading-relaxed">
+                    🔓 Ученикам <strong>не требуется регистрация или авторизация через Google</strong>. Они мгновенно переходят в свой личный кабинет по скопированной ссылке.
+                  </p>
+                </div>
+                
+                {/* Cloud Sync Status Indicator */}
+                <div className="flex items-center gap-2 shrink-0 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl px-3 py-1.5 text-[10px] text-emerald-400 font-sans font-medium self-start sm:self-center">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Облако: {Object.keys(cabinets).length} каб.</span>
+                </div>
+              </div>
 
               <div className="space-y-4">
                 {students.map(student => {
