@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { safeStorage } from '../utils/safeStorage';
 
 interface StudentCabinetViewProps {
   cabinetId?: string | null;
@@ -45,12 +46,13 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
   }, []);
 
   // Robust function to merge incoming assigned tests list with local browser submissions history
-  const mergeAssignedTests = (incomingTests: AssignedTest[], cabId: string): AssignedTest[] => {
+  const mergeAssignedTests = (incomingTests: AssignedTest[] | undefined | null, cabId: string): AssignedTest[] => {
+    const safeTests = Array.isArray(incomingTests) ? incomingTests : [];
     const localSubmittedMap: Record<string, AssignedTest> = {};
 
     // 1. Recover from student_progress_${cabId}
     try {
-      const progressStr = localStorage.getItem(`student_progress_${cabId}`);
+      const progressStr = safeStorage.getItem(`student_progress_${cabId}`);
       if (progressStr) {
         const savedTests = JSON.parse(progressStr) as AssignedTest[];
         savedTests.forEach(t => {
@@ -65,7 +67,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
     // 2. Recover from student_cabinet_${cabId} to be 100% resilient
     try {
-      const storedCabStr = localStorage.getItem(`student_cabinet_${cabId}`);
+      const storedCabStr = safeStorage.getItem(`student_cabinet_${cabId}`);
       if (storedCabStr) {
         const storedCab = JSON.parse(storedCabStr) as StudentCabinet;
         if (storedCab && Array.isArray(storedCab.assignedTests)) {
@@ -81,7 +83,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     }
 
     // 3. Merge: if a test has been completed locally, preserve its answers & scores
-    return incomingTests.map(test => {
+    return safeTests.map(test => {
       const localCompleted = localSubmittedMap[test.id];
       if (localCompleted) {
         return { ...test, ...localCompleted };
@@ -97,7 +99,11 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
     if (propCabinet) {
       // Tutor preview mode
-      setCabinet(propCabinet);
+      const safeCabinet = {
+        ...propCabinet,
+        assignedTests: Array.isArray(propCabinet.assignedTests) ? propCabinet.assignedTests : []
+      };
+      setCabinet(safeCabinet);
       setLoading(false);
       return;
     }
@@ -105,7 +111,9 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     let decodedCab: StudentCabinet | null = null;
 
     if (cabinetData) {
-      decodedCab = decodeData(cabinetData) as StudentCabinet;
+      // URLSearchParams replaces '+' with ' ' (space) when parsing. We must restore '+' characters!
+      const cleanCabinetData = cabinetData.replace(/ /g, '+');
+      decodedCab = decodeData(cleanCabinetData) as StudentCabinet;
     }
 
     if (!decodedCab && cabinetId) {
@@ -118,10 +126,10 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
           fetchedCab.assignedTests = mergeAssignedTests(fetchedCab.assignedTests, cabinetId);
           
           setCabinet(fetchedCab);
-          localStorage.setItem(`student_cabinet_${cabinetId}`, JSON.stringify(fetchedCab));
+          safeStorage.setItem(`student_cabinet_${cabinetId}`, JSON.stringify(fetchedCab));
         } else {
           // Fallback to local storage if offline or not found
-          const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
+          const stored = safeStorage.getItem(`student_cabinet_${cabinetId}`);
           if (stored) {
             try {
               const parsed = JSON.parse(stored) as StudentCabinet;
@@ -138,7 +146,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
       }).catch((err) => {
         console.error('Error fetching cabinet:', err);
         // Fallback to local storage on error
-        const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
+        const stored = safeStorage.getItem(`student_cabinet_${cabinetId}`);
         if (stored) {
           try {
             const parsed = JSON.parse(stored) as StudentCabinet;
@@ -160,7 +168,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
       decodedCab.assignedTests = mergeAssignedTests(decodedCab.assignedTests, decodedCab.id);
       setCabinet(decodedCab);
       // Save original/decoded cabinet structure locally as fallback
-      localStorage.setItem(`student_cabinet_${decodedCab.id}`, JSON.stringify(decodedCab));
+      safeStorage.setItem(`student_cabinet_${decodedCab.id}`, JSON.stringify(decodedCab));
     } else {
       setError('Кабинет не найден или указана неверная ссылка. Пожалуйста, убедитесь, что вы скопировали ссылку полностью.');
     }
@@ -206,42 +214,40 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-800">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600 mb-4"></div>
-        <p className="text-sm font-medium">Загрузка вашего кабинета...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-white text-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-purple-500/20 border-t-purple-500 mb-4"></div>
+        <p className="text-sm font-medium text-white/60 font-sans">Загрузка вашего кабинета...</p>
       </div>
     );
   }
 
   if (error || !cabinet) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-800 text-center">
-        <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600 mb-4 animate-pulse">
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-white text-center">
+        <div className="w-16 h-16 rounded-3xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 mb-4 animate-pulse">
           <ShieldAlert className="w-8 h-8" />
         </div>
-        <h2 className="text-xl font-bold mb-2">Доступ ограничен</h2>
-        <p className="text-sm text-slate-500 max-w-md mb-4">
+        <h2 className="text-lg font-bold text-white mb-2 font-sans">Доступ ограничен</h2>
+        <p className="text-xs text-white/60 max-w-md mb-6 leading-relaxed font-sans">
           {error || 'Указана неверная или устаревшая ссылка.'}
         </p>
         
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 max-w-md text-left text-xs text-amber-800 mb-6 space-y-2">
-          <p className="font-semibold">💡 Как решить эту проблему:</p>
-          <ul className="list-disc pl-4 space-y-1">
-            <li>Убедитесь, что вы перешли по полной ссылке, предоставленной вашим преподавателем, без лишних символов на конце.</li>
-            <li>Если проблема повторяется, попросите преподавателя отправить вам ссылку повторно.</li>
+        <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-5 max-w-md text-left text-xs text-amber-200/80 mb-6 space-y-2 font-sans">
+          <p className="font-bold text-amber-400">💡 Как решить эту проблему:</p>
+          <ul className="list-disc pl-4 space-y-1.5 font-medium">
+            <li>Убедитесь, что вы перешли по полной ссылке, предоставленной вашим преподавателем.</li>
+            <li>Если в ссылке есть часть <b>cabinet_data=...</b>, возможно, ссылка была урезана вашим мессенджером (Telegram, WhatsApp и др.) из-за большого объёма. Попросите преподавателя отправить короткую облачную ссылку.</li>
           </ul>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+        <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
           <button 
             onClick={() => window.location.reload()}
-            className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-xl text-xs font-semibold shadow-md transition duration-150 flex items-center gap-1.5"
+            className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md transition duration-150 flex items-center gap-1.5 border-none cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
             Проверить снова
           </button>
-          
-          <p className="text-[10px] text-slate-400 sm:ml-2">Пожалуйста, свяжитесь со своим преподавателем, чтобы получить актуальную ссылку.</p>
         </div>
       </div>
     );
@@ -274,7 +280,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
         timeSpent,
         tabSwitches
       };
-      localStorage.setItem(draftKey, JSON.stringify(draftData));
+      safeStorage.setItem(draftKey, JSON.stringify(draftData));
     }
   }, [studentAnswers, wantToDiscuss, timeSpent, tabSwitches, activeTest, cabinet]);
 
@@ -284,7 +290,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     
     // Attempt to restore draft
     const draftKey = `student_draft_${cabinet?.id}_${test.id}`;
-    const storedDraft = localStorage.getItem(draftKey);
+    const storedDraft = safeStorage.getItem(draftKey);
     if (storedDraft) {
       try {
         const parsed = JSON.parse(storedDraft);
@@ -359,7 +365,8 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
         if (isCorrect) score++;
       });
 
-      const updatedAssignedTests = cabinet.assignedTests.map(test => {
+      const safeAssigned = Array.isArray(cabinet.assignedTests) ? cabinet.assignedTests : [];
+      const updatedAssignedTests = safeAssigned.map(test => {
         if (test.id === activeTest.id) {
           return {
             ...test,
@@ -397,11 +404,11 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
       // 3. Save student progress locally in their browser so it persists across reloads
       const progressKey = `student_progress_${cabinet.id}`;
-      localStorage.setItem(progressKey, JSON.stringify(updatedAssignedTests));
-      localStorage.setItem(`student_cabinet_${cabinet.id}`, JSON.stringify(updatedCabinet));
+      safeStorage.setItem(progressKey, JSON.stringify(updatedAssignedTests));
+      safeStorage.setItem(`student_cabinet_${cabinet.id}`, JSON.stringify(updatedCabinet));
       
       // Clear draft answers as the test is successfully submitted
-      localStorage.removeItem(`student_draft_${cabinet.id}_${activeTest.id}`);
+      safeStorage.removeItem(`student_draft_${cabinet.id}_${activeTest.id}`);
 
       // 4. Generate result code for the student to send to their teacher
       const resultPayload = {
@@ -444,8 +451,9 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const completedTests = cabinet.assignedTests.filter(t => t.status === 'submitted');
-  const pendingTests = cabinet.assignedTests.filter(t => t.status === 'pending');
+  const safeAssignedTests = Array.isArray(cabinet.assignedTests) ? cabinet.assignedTests : [];
+  const completedTests = safeAssignedTests.filter(t => t.status === 'submitted');
+  const pendingTests = safeAssignedTests.filter(t => t.status === 'pending');
 
   // Chart data preprocessor
   const chartPoints = completedTests
@@ -460,7 +468,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     .slice(-10); // last 10 tests
 
   // Max questions in any test to dynamically set grid columns in the summary table
-  const maxQuestionsCount = Math.max(...cabinet.assignedTests.map(t => t.questions.length), 0);
+  const maxQuestionsCount = Math.max(...safeAssignedTests.map(t => (t.questions || []).length), 0);
 
   return (
     <div className="min-h-screen text-white/90 font-sans selection:bg-purple-500/30 selection:text-white pb-12">

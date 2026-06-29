@@ -76,7 +76,7 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       }
     }
 
-    base64Part = base64Part.replace(/[^A-Za-z0-9\-_$]/g, '');
+    base64Part = base64Part.replace(/[^A-Za-z0-9\-_$+/=]/g, '');
 
     const decoded = decodeData(base64Part);
     if (!decoded || !decoded.cabinetId || !decoded.testId) {
