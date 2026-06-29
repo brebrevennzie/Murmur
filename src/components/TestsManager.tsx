@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, TestTemplate, TestQuestion, StudentCabinet, AssignedTest } from '../types';
+import { decodeData, encodeData } from '../utils/codec';
 import { 
   Plus, Edit3, Trash2, Link2, Copy, Check, Clock, AlertTriangle, 
   ChevronRight, ArrowLeft, Eye, Send, CheckCircle2, XCircle, 
-  HelpCircle, BookOpen, User, FolderOpen, Award, Layers
+  HelpCircle, BookOpen, User, FolderOpen, Award, Layers, ClipboardList, X
 } from 'lucide-react';
 import { StudentCabinetView } from './StudentCabinetView';
 
@@ -48,122 +49,138 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Import Answers States
+  const [showImportAnswersModal, setShowImportAnswersModal] = useState(false);
+  const [importAnswersText, setImportAnswersText] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const handleImportAnswers = async () => {
+    setImportError(null);
+    if (!importAnswersText.trim()) {
+      setImportError('Пожалуйста, вставьте код результата.');
+      return;
+    }
+
+    let base64Part = importAnswersText.trim();
+    if (base64Part.includes('Код:')) {
+      const idx = base64Part.indexOf('Код:');
+      base64Part = base64Part.substring(idx + 4).trim();
+    } else if (base64Part.includes('|')) {
+      const parts = base64Part.split('|');
+      const lastPart = parts[parts.length - 1].trim();
+      if (lastPart.startsWith('Код:')) {
+        base64Part = lastPart.replace('Код:', '').trim();
+      } else {
+        base64Part = lastPart;
+      }
+    }
+
+    base64Part = base64Part.replace(/[^A-Za-z0-9\-_]/g, '');
+
+    const decoded = decodeData(base64Part);
+    if (!decoded || !decoded.cabinetId || !decoded.testId) {
+      setImportError('Не удалось распознать код результата. Убедитесь, что вы скопировали и вставили код полностью.');
+      return;
+    }
+
+    const { cabinetId, testId, score, totalQuestions, submittedAt, timeSpent, tabSwitches, answers, wantToDiscuss, checkedResults } = decoded;
+
+    const cabinet = cabinets[cabinetId];
+    if (!cabinet) {
+      setImportError('Ученик с таким кабинетом не найден в вашем списке.');
+      return;
+    }
+
+    // Update the assigned test status to 'submitted' in the cabinet
+    const updatedAssignedTests = cabinet.assignedTests.map(test => {
+      // Handle both specific assigned instance ID and parent template ID
+      if (test.id === testId || test.templateId === testId) {
+        return {
+          ...test,
+          status: 'submitted' as const,
+          submittedAt,
+          timeSpent,
+          tabSwitches,
+          answers,
+          wantToDiscuss,
+          score,
+          totalQuestions,
+          checkedResults
+        };
+      }
+      return test;
+    });
+
+    const updatedCabinet = {
+      ...cabinet,
+      assignedTests: updatedAssignedTests
+    };
+
+    const updatedCabs = { ...cabinets, [cabinetId]: updatedCabinet };
+    await saveCabinetsToStorage(updatedCabs);
+
+    setImportAnswersText('');
+    setShowImportAnswersModal(false);
+    alert(`Результаты ученика "${cabinet.studentName}" по тесту успешно импортированы и сохранены!`);
+  };
+
   // Track active students list in ref to allow stable onSnapshot without frequent re-subscribes
   const studentsRef = useRef(students);
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
 
-  // 1. Listen or Fetch Cabinets from Firestore in real-time with self-healing auto-sync
+  // Load cabinets on mount / user change
   useEffect(() => {
     setLoadingCabinets(true);
-    
-    // Determine target tutorId for syncing
-    const activeTutorId = user ? user.uid : (() => {
-      let id = localStorage.getItem('guest_tutor_id');
-      if (!id) {
-        id = `guest_${Math.random().toString(36).substring(2, 11)}`;
-        localStorage.setItem('guest_tutor_id', id);
+    // 1. First load from localStorage
+    try {
+      const stored = localStorage.getItem('tutor_local_cabinets');
+      if (stored) {
+        setCabinets(JSON.parse(stored));
       }
-      return id;
-    })();
+    } catch (e) {
+      console.error('Error loading local cabinets:', e);
+    }
 
-    const q = collection(db, 'cabinets');
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded: Record<string, StudentCabinet> = {};
-      const cloudCabinetIds = new Set<string>();
-      
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as StudentCabinet;
-        if (data.tutorId === activeTutorId) {
-          loaded[data.id] = data;
-          cloudCabinetIds.add(data.id);
-        }
-      });
-
-      // Load local baseline, auto-migrate, and find unsynced ones
-      try {
-        const stored = localStorage.getItem('tutor_local_cabinets');
-        if (stored) {
-          const parsed = JSON.parse(stored) as Record<string, StudentCabinet>;
-          const unsyncedCabinets: StudentCabinet[] = [];
-          const activeStudents = studentsRef.current;
-
-          Object.entries(parsed).forEach(([id, cab]) => {
-            // Check if this cabinet is owned by any student in the active list
-            const isOwnedByActiveStudent = activeStudents.some(
-              s => s.cabinetId === id || s.id === cab.studentId
-            );
-
-            if (isOwnedByActiveStudent) {
-              let updatedCab = { ...cab };
-              let modified = false;
-
-              // Rule 1: If tutor logged in/out, migrate the tutorId to current activeTutorId
-              if (updatedCab.tutorId !== activeTutorId) {
-                updatedCab.tutorId = activeTutorId;
-                modified = true;
-              }
-
-              // Rule 2: If the cabinet studentName has changed, keep it updated
-              const studentObj = activeStudents.find(s => s.id === updatedCab.studentId);
-              if (studentObj && studentObj.name !== updatedCab.studentName) {
-                updatedCab.studentName = studentObj.name;
-                modified = true;
-              }
-
-              if (modified || !cloudCabinetIds.has(id)) {
-                unsyncedCabinets.push(updatedCab);
-              }
-
-              loaded[id] = updatedCab;
-            } else if (cab.tutorId === activeTutorId) {
-              // Cabinet belongs to this tutor but maybe not active in current screen list
-              if (!cloudCabinetIds.has(id)) {
-                unsyncedCabinets.push(cab);
-              }
-              if (!loaded[id]) {
-                loaded[id] = cab;
-              }
-            }
-          });
-
-          // Auto-heal: background sync missing or migrated cabinets to Firestore
-          if (unsyncedCabinets.length > 0) {
-            console.log(`Auto-healing/syncing ${unsyncedCabinets.length} local cabinets to Firestore...`);
-            unsyncedCabinets.forEach(async (cab) => {
-              try {
-                await setDoc(doc(db, 'cabinets', cab.id), cab);
-                console.log(`Successfully auto-healed cabinet ${cab.id} in cloud.`);
-              } catch (e) {
-                console.error(`Failed to auto-heal cabinet ${cab.id}:`, e);
-              }
-            });
+    // 2. If tutor is logged in, load from Firestore user document
+    if (user) {
+      const userDocRef = doc(db, 'users', user.uid);
+      getDoc(userDocRef).then((snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.cabinets) {
+            setCabinets(data.cabinets);
+            localStorage.setItem('tutor_local_cabinets', JSON.stringify(data.cabinets));
           }
         }
-      } catch (e) {
-        console.error('Error during local cabinet loading & healing:', e);
-      }
-
-      setCabinets(loaded);
+        setLoadingCabinets(false);
+      }).catch((err) => {
+        console.error('Error fetching tutor cabinets:', err);
+        setLoadingCabinets(false);
+      });
+    } else {
       setLoadingCabinets(false);
-      
-      // Sync to localStorage as backup
-      localStorage.setItem('tutor_local_cabinets', JSON.stringify(loaded));
-    }, (err) => {
-      console.error('Error fetching cabinets:', err);
-      setLoadingCabinets(false);
-      
-      // Fallback to local storage if offline or blocked
-      try {
-        const stored = localStorage.getItem('tutor_local_cabinets');
-        if (stored) setCabinets(JSON.parse(stored));
-      } catch {}
-    });
-
-    return () => unsubscribe();
+    }
   }, [user]);
+
+  // Save cabinets to LocalStorage and Firestore
+  const saveCabinetsToStorage = async (updatedCabs: Record<string, StudentCabinet>) => {
+    setCabinets(updatedCabs);
+    localStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
+    
+    if (user) {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(userDocRef, {
+          cabinets: updatedCabs,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.error('Failed to sync cabinets to Firestore:', err);
+      }
+    }
+  };
 
   // 2. Persist templates to LocalStorage and Firestore
   useEffect(() => {
@@ -281,14 +298,9 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       assignedTests: []
     };
 
-    // 1. Instantly update local state and storage for 100% responsive UI
+    // Instantly update local state and storage/cloud
     const localCabs = { ...cabinets, [cabinetId]: newCabinet };
-    setCabinets(localCabs);
-    try {
-      localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
-    } catch (e) {
-      console.error('Local storage error:', e);
-    }
+    await saveCabinetsToStorage(localCabs);
 
     // Link in student object
     const updatedStudents = students.map(s => {
@@ -298,13 +310,6 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       return s;
     });
     onUpdateStudents(updatedStudents);
-
-    // 2. Perform Firestore write in background
-    try {
-      await setDoc(doc(db, 'cabinets', cabinetId), newCabinet);
-    } catch (err) {
-      console.error('Failed to sync new cabinet to Firestore cloud:', err);
-    }
   };
 
   // Delete cabinet
@@ -313,15 +318,10 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       return;
     }
 
-    // 1. Instantly update local state and storage
+    // Instantly update local state and storage/cloud
     const localCabs = { ...cabinets };
     delete localCabs[cabinetId];
-    setCabinets(localCabs);
-    try {
-      localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
-    } catch (e) {
-      console.error('Local storage error:', e);
-    }
+    await saveCabinetsToStorage(localCabs);
 
     // Unlink in student object
     const updatedStudents = students.map(s => {
@@ -333,13 +333,6 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       return s;
     });
     onUpdateStudents(updatedStudents);
-
-    // 2. Perform Firestore delete in background
-    try {
-      await deleteDoc(doc(db, 'cabinets', cabinetId));
-    } catch (err) {
-      console.error('Failed to delete student cabinet from cloud:', err);
-    }
   };
 
   // Pre-populate questions for OGE or EGE
@@ -498,34 +491,28 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       assignedTests: [assignedInstance, ...(cabinet.assignedTests || [])]
     };
 
-    // 1. Instantly update local state & storage for fast UI feedback
+    // Instantly update local state & storage/cloud
     const localCabs = { ...cabinets, [assignTargetCabinetId]: updatedCabinet };
-    setCabinets(localCabs);
-    try {
-      localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabs));
-    } catch (e) {
-      console.error('Local storage write error:', e);
-    }
+    await saveCabinetsToStorage(localCabs);
 
     setShowAssignModal(false);
     setAssignTargetCabinetId(null);
     alert(`Тест "${template.title}" успешно назначен ученику ${cabinet.studentName}!`);
-
-    // 2. Write to Firestore in background
-    try {
-      await setDoc(doc(db, 'cabinets', assignTargetCabinetId), updatedCabinet);
-    } catch (err) {
-      console.error('Failed to assign test in cloud:', err);
-    }
   };
 
-  // Copy personal link to clipboard
+  // Copy personal link to clipboard (Self-contained Base64 Url)
   const handleCopyLink = (cabinetId: string) => {
+    const cabinetObj = cabinets[cabinetId];
+    if (!cabinetObj) {
+      alert('Ошибка: кабинет не найден.');
+      return;
+    }
+    const encoded = encodeData(cabinetObj);
     let origin = window.location.origin;
     if (origin.includes('ais-dev-')) {
       origin = origin.replace('ais-dev-', 'ais-pre-');
     }
-    const link = `${origin}${window.location.pathname}?cabinet=${cabinetId}`;
+    const link = `${origin}${window.location.pathname}?cabinet_data=${encoded}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopiedId(cabinetId);
       setTimeout(() => setCopiedId(null), 2000);
@@ -556,7 +543,13 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
             </span>
           </div>
         </div>
-        <StudentCabinetView cabinetId={previewCabinetId} />
+        <StudentCabinetView 
+          cabinet={cabinets[previewCabinetId]} 
+          onSaveAnswers={(updatedCabinet) => {
+            const updatedCabs = { ...cabinets, [previewCabinetId]: updatedCabinet };
+            saveCabinetsToStorage(updatedCabs);
+          }}
+        />
       </div>
     );
   }
@@ -654,10 +647,21 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
                   </p>
                 </div>
                 
-                {/* Cloud Sync Status Indicator */}
-                <div className="flex items-center gap-2 shrink-0 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl px-3 py-1.5 text-[10px] text-emerald-400 font-sans font-medium self-start sm:self-center">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Облако: {Object.keys(cabinets).length} каб.</span>
+                <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 shrink-0">
+                  {/* Import Answers Button */}
+                  <button
+                    onClick={() => setShowImportAnswersModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-200 hover:text-purple-100 rounded-2xl text-[10px] font-sans font-medium transition cursor-pointer"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    <span>Импортировать ответы</span>
+                  </button>
+
+                  {/* Cloud Sync Status Indicator */}
+                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl px-3 py-1.5 text-[10px] text-emerald-400 font-sans font-medium">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Кабинеты: {Object.keys(cabinets).length}</span>
+                  </div>
                 </div>
               </div>
 
@@ -1239,6 +1243,67 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
                 className="py-2 px-4 rounded-xl border border-white/5 bg-white/[0.02] text-white/60 hover:text-white hover:bg-white/5 text-xs font-semibold"
               >
                 Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Answers Modal */}
+      {showImportAnswersModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-[#12131a] border border-white/10 rounded-3xl p-6 shadow-2xl max-w-lg w-full animate-fadeIn text-white">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/5">
+              <h3 className="font-serif text-sm font-bold flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-purple-400" />
+                Импорт результатов теста ученика
+              </h3>
+              <button
+                onClick={() => {
+                  setShowImportAnswersModal(false);
+                  setImportError(null);
+                  setImportAnswersText('');
+                }}
+                className="text-white/40 hover:text-white hover:bg-white/5 p-1 rounded-lg transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-[11px] text-white/60 leading-relaxed mb-4 font-sans">
+              Вставьте сюда код результатов, который прислал вам ученик. Система автоматически распознает его, сопоставит с кабинетом ученика и сохранит подробную статистику ответов.
+            </p>
+
+            <textarea
+              value={importAnswersText}
+              onChange={(e) => setImportAnswersText(e.target.value)}
+              placeholder="Вставьте скопированный от ученика код сюда (например: [РЕЗУЛЬТАТ-ТЕСТА] ...)"
+              className="w-full h-32 p-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-white/20 focus:outline-none focus:border-purple-500 mb-4"
+            />
+
+            {importError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4 text-xs text-red-400 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{importError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowImportAnswersModal(false);
+                  setImportError(null);
+                  setImportAnswersText('');
+                }}
+                className="px-4 py-2 text-xs font-semibold text-white/60 hover:text-white hover:bg-white/5 rounded-xl transition"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleImportAnswers}
+                className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition active:scale-95 cursor-pointer"
+              >
+                Импортировать
               </button>
             </div>
           </div>

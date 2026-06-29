@@ -1,21 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
 import { AssignedTest, TestQuestion, StudentCabinet } from '../types';
+import { decodeData, encodeData } from '../utils/codec';
 import { 
   Play, CheckCircle, Clock, AlertTriangle, ShieldAlert,
   ArrowRight, ExternalLink, RefreshCw, Star, BarChart2,
-  Calendar, Check, X, MessageSquare, ChevronLeft, Award
+  Calendar, Check, X, MessageSquare, ChevronLeft, Award, Copy
 } from 'lucide-react';
 
 interface StudentCabinetViewProps {
-  cabinetId: string;
+  cabinetId?: string | null;
+  cabinetData?: string | null;
+  cabinet?: StudentCabinet | null;
+  onSaveAnswers?: (updatedCabinet: StudentCabinet) => void;
 }
 
-export function StudentCabinetView({ cabinetId }: StudentCabinetViewProps) {
+export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabinet, onSaveAnswers }: StudentCabinetViewProps) {
   const [cabinet, setCabinet] = useState<StudentCabinet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resultCodeToCopy, setResultCodeToCopy] = useState<string | null>(null);
+  const [copiedResult, setCopiedResult] = useState(false);
   
   // Active test solving state
   const [activeTest, setActiveTest] = useState<AssignedTest | null>(null);
@@ -31,28 +35,64 @@ export function StudentCabinetView({ cabinetId }: StudentCabinetViewProps) {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 1. Fetch Cabinet real-time from Firestore
+  // 1. Fetch or decode cabinet data
   useEffect(() => {
     setLoading(true);
-    const cleanId = cabinetId.trim();
-    const docRef = doc(db, 'cabinets', cleanId);
-    
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setCabinet(docSnap.data() as StudentCabinet);
-        setError(null);
-      } else {
-        setError('Кабинет не найден или был удален преподавателем.');
-      }
-      setLoading(false);
-    }, (err) => {
-      console.error('Error fetching cabinet:', err);
-      setError('Не удалось загрузить данные кабинета. Проверьте интернет-соединение.');
-      setLoading(false);
-    });
+    setError(null);
 
-    return () => unsubscribe();
-  }, [cabinetId]);
+    if (propCabinet) {
+      // Tutor preview mode
+      setCabinet(propCabinet);
+      setLoading(false);
+      return;
+    }
+
+    let decodedCab: StudentCabinet | null = null;
+
+    if (cabinetData) {
+      decodedCab = decodeData(cabinetData) as StudentCabinet;
+    }
+
+    if (!decodedCab && cabinetId) {
+      // Fallback: see if we can load it from localStorage
+      const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
+      if (stored) {
+        try {
+          decodedCab = JSON.parse(stored);
+        } catch (e) {}
+      }
+    }
+
+    if (decodedCab) {
+      // Merge with student's local submissions progress to preserve completed tests
+      const cabId = decodedCab.id;
+      const progressKey = `student_progress_${cabId}`;
+      const savedProgressStr = localStorage.getItem(progressKey);
+      if (savedProgressStr) {
+        try {
+          const savedTests = JSON.parse(savedProgressStr) as AssignedTest[];
+          // Map assigned tests: if they are completed in saved progress, update them
+          const mergedTests = decodedCab.assignedTests.map(test => {
+            const saved = savedTests.find(t => t.id === test.id);
+            if (saved && saved.status === 'submitted') {
+              return { ...test, ...saved };
+            }
+            return test;
+          });
+          decodedCab = { ...decodedCab, assignedTests: mergedTests };
+        } catch (e) {
+          console.error('Error merging saved progress:', e);
+        }
+      }
+
+      setCabinet(decodedCab);
+      // Save original/decoded cabinet structure locally as fallback
+      localStorage.setItem(`student_cabinet_${decodedCab.id}`, JSON.stringify(decodedCab));
+    } else {
+      setError('Кабинет не найден или указана неверная ссылка. Пожалуйста, убедитесь, что вы скопировали ссылку полностью.');
+    }
+    setLoading(false);
+  }, [cabinetId, cabinetData, propCabinet]);
 
   // 2. Track Page Blur (tab switches) and Timer when a test is being solved
   useEffect(() => {
@@ -236,13 +276,43 @@ export function StudentCabinetView({ cabinetId }: StudentCabinetViewProps) {
         assignedTests: updatedAssignedTests
       };
 
-      await setDoc(doc(db, 'cabinets', cabinetId), updatedCabinet);
-      
+      // 1. If in tutor preview mode, trigger the onSaveAnswers callback
+      if (onSaveAnswers) {
+        onSaveAnswers(updatedCabinet);
+      }
+
+      // 2. Update local state
+      setCabinet(updatedCabinet);
+
+      // 3. Save student progress locally in their browser so it persists across reloads
+      const progressKey = `student_progress_${cabinet.id}`;
+      localStorage.setItem(progressKey, JSON.stringify(updatedAssignedTests));
+      localStorage.setItem(`student_cabinet_${cabinet.id}`, JSON.stringify(updatedCabinet));
+
+      // 4. Generate result code for the student to send to their teacher
+      const resultPayload = {
+        cabinetId: cabinet.id,
+        studentId: cabinet.studentId,
+        testId: activeTest.id,
+        score,
+        totalQuestions: activeTest.questions.length,
+        submittedAt: new Date().toISOString(),
+        timeSpent,
+        tabSwitches,
+        answers: studentAnswers,
+        wantToDiscuss,
+        checkedResults
+      };
+
+      const encodedResult = encodeData(resultPayload);
+      const formattedResultCode = `[РЕЗУЛЬТАТ-ТЕСТА] ${cabinet.studentName} | ${activeTest.title} | Оценка: ${score}/${activeTest.questions.length} | Код: ${encodedResult}`;
+      setResultCodeToCopy(formattedResultCode);
+
       setActiveTest(null);
       setShowConfirmSubmit(false);
     } catch (err: any) {
       console.error('Error submitting test:', err);
-      setSubmittingError('Не удалось отправить результаты. Проверьте подключение к сети и попробуйте снова.');
+      setSubmittingError('Не удалось сохранить результаты. Пожалуйста, попробуйте снова.');
     } finally {
       setIsSubmitting(false);
     }
@@ -542,6 +612,58 @@ export function StudentCabinetView({ cabinetId }: StudentCabinetViewProps) {
                       ) : (
                         <span>Отправить</span>
                       )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Result Code Modal */}
+            {resultCodeToCopy && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-lg w-full animate-fadeIn">
+                  <div className="w-12 h-12 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center text-xl mb-4 border border-green-100 shadow-xs">
+                    🎉
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">Тест успешно выполнен!</h3>
+                  <p className="text-xs text-slate-600 leading-relaxed mb-4">
+                    Твой результат сохранён в твоём браузере. <strong className="text-purple-600">Обязательно скопируй код ниже и отправь его учителю</strong> (в Telegram, WhatsApp или личные сообщения), чтобы он смог внести результаты в свой журнал:
+                  </p>
+                  
+                  <div className="relative mb-6">
+                    <textarea
+                      readOnly
+                      value={resultCodeToCopy}
+                      className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(resultCodeToCopy);
+                        setCopiedResult(true);
+                        setTimeout(() => setCopiedResult(false), 2000);
+                      }}
+                      className="absolute right-2 bottom-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 transition"
+                    >
+                      {copiedResult ? (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Скопировано!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Скопировать</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center justify-end">
+                    <button
+                      onClick={() => setResultCodeToCopy(null)}
+                      className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition"
+                    >
+                      Закрыть
                     </button>
                   </div>
                 </div>
