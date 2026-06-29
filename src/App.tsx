@@ -27,9 +27,10 @@ export default function App() {
   const queryParams = new URLSearchParams(window.location.search);
   const rawCabinetId = queryParams.get('cabinet');
   const cabinetId = rawCabinetId ? rawCabinetId.trim() : null;
+  const cabinetData = queryParams.get('cabinet_data');
 
-  if (cabinetId) {
-    return <StudentCabinetView cabinetId={cabinetId} />;
+  if (cabinetId || cabinetData) {
+    return <StudentCabinetView cabinetId={cabinetId} cabinetData={cabinetData} />;
   }
 
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
