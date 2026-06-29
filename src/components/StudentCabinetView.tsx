@@ -6,6 +6,8 @@ import {
   ArrowRight, ExternalLink, RefreshCw, Star, BarChart2,
   Calendar, Check, X, MessageSquare, ChevronLeft, Award, Copy
 } from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface StudentCabinetViewProps {
   cabinetId?: string | null;
@@ -54,13 +56,60 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     }
 
     if (!decodedCab && cabinetId) {
-      // Fallback: see if we can load it from localStorage
-      const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
-      if (stored) {
-        try {
-          decodedCab = JSON.parse(stored);
-        } catch (e) {}
-      }
+      // Fetch directly from Firestore so links can be short!
+      getDoc(doc(db, 'cabinets', cabinetId)).then((snap) => {
+        if (snap.exists()) {
+          let fetchedCab = snap.data() as StudentCabinet;
+          
+          // Merge with student's local submissions progress to preserve completed tests
+          const progressKey = `student_progress_${cabinetId}`;
+          const savedProgressStr = localStorage.getItem(progressKey);
+          if (savedProgressStr) {
+            try {
+              const savedTests = JSON.parse(savedProgressStr) as AssignedTest[];
+              const mergedTests = fetchedCab.assignedTests.map(test => {
+                const saved = savedTests.find(t => t.id === test.id);
+                if (saved && saved.status === 'submitted') {
+                  return { ...test, ...saved };
+                }
+                return test;
+              });
+              fetchedCab = { ...fetchedCab, assignedTests: mergedTests };
+            } catch (e) {}
+          }
+          
+          setCabinet(fetchedCab);
+          localStorage.setItem(`student_cabinet_${cabinetId}`, JSON.stringify(fetchedCab));
+        } else {
+          // Fallback to local storage if offline or not found
+          const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
+          if (stored) {
+            try {
+              setCabinet(JSON.parse(stored));
+            } catch (e) {
+              setError('Кабинет не найден в системе. Обратитесь к преподавателю за ссылкой.');
+            }
+          } else {
+            setError('Кабинет не найден в системе. Пожалуйста, обратитесь к вашему преподавателю за актуальной ссылкой.');
+          }
+        }
+        setLoading(false);
+      }).catch((err) => {
+        console.error('Error fetching cabinet:', err);
+        // Fallback to local storage on error
+        const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
+        if (stored) {
+          try {
+            setCabinet(JSON.parse(stored));
+          } catch (e) {
+            setError('Ошибка подключения к базе данных.');
+          }
+        } else {
+          setError('Ошибка загрузки кабинета. Проверьте подключение к интернету.');
+        }
+        setLoading(false);
+      });
+      return;
     }
 
     if (decodedCab) {
@@ -279,6 +328,13 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
       // 1. If in tutor preview mode, trigger the onSaveAnswers callback
       if (onSaveAnswers) {
         onSaveAnswers(updatedCabinet);
+      }
+
+      // Save directly to public Firestore collection for real-time teacher updates!
+      try {
+        await setDoc(doc(db, 'cabinets', cabinet.id), updatedCabinet);
+      } catch (err) {
+        console.error('Failed to sync student answers to Firestore:', err);
       }
 
       // 2. Update local state

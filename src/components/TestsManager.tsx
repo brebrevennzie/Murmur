@@ -130,10 +130,10 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     studentsRef.current = students;
   }, [students]);
 
-  // Load cabinets on mount / user change
+  // Load cabinets on mount / user change with real-time onSnapshot sync
   useEffect(() => {
     setLoadingCabinets(true);
-    // 1. First load from localStorage
+    // 1. First load from localStorage for quick responsiveness
     try {
       const stored = localStorage.getItem('tutor_local_cabinets');
       if (stored) {
@@ -143,25 +143,33 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       console.error('Error loading local cabinets:', e);
     }
 
-    // 2. If tutor is logged in, load from Firestore user document
-    if (user) {
-      const userDocRef = doc(db, 'users', user.uid);
-      getDoc(userDocRef).then((snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.cabinets) {
-            setCabinets(data.cabinets);
-            localStorage.setItem('tutor_local_cabinets', JSON.stringify(data.cabinets));
-          }
+    const activeTutorId = user ? user.uid : (() => {
+      let id = localStorage.getItem('guest_tutor_id');
+      if (!id) {
+        id = `guest_${Math.random().toString(36).substring(2, 11)}`;
+        localStorage.setItem('guest_tutor_id', id);
+      }
+      return id;
+    })();
+
+    const q = collection(db, 'cabinets');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loaded: Record<string, StudentCabinet> = {};
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as StudentCabinet;
+        if (data.tutorId === activeTutorId) {
+          loaded[data.id] = data;
         }
-        setLoadingCabinets(false);
-      }).catch((err) => {
-        console.error('Error fetching tutor cabinets:', err);
-        setLoadingCabinets(false);
       });
-    } else {
+      setCabinets(loaded);
+      localStorage.setItem('tutor_local_cabinets', JSON.stringify(loaded));
       setLoadingCabinets(false);
-    }
+    }, (err) => {
+      console.error('Error in cabinets snapshot listener:', err);
+      setLoadingCabinets(false);
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
   // Save cabinets to LocalStorage and Firestore
@@ -169,16 +177,25 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     setCabinets(updatedCabs);
     localStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
     
-    if (user) {
-      try {
+    const activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
+    try {
+      // 1. Write individual cabinets to public cabinets collection so students can fetch them
+      for (const cab of Object.values(updatedCabs)) {
+        if (cab.tutorId === activeTutorId) {
+          await setDoc(doc(db, 'cabinets', cab.id), cab);
+        }
+      }
+
+      // 2. Write backup to tutor's profile document if logged in
+      if (user) {
         const userDocRef = doc(db, 'users', user.uid);
         await setDoc(userDocRef, {
           cabinets: updatedCabs,
           lastUpdated: new Date().toISOString()
         }, { merge: true });
-      } catch (err) {
-        console.error('Failed to sync cabinets to Firestore:', err);
       }
+    } catch (err) {
+      console.error('Failed to sync cabinets to Firestore:', err);
     }
   };
 
@@ -500,19 +517,13 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     alert(`Тест "${template.title}" успешно назначен ученику ${cabinet.studentName}!`);
   };
 
-  // Copy personal link to clipboard (Self-contained Base64 Url)
+  // Copy personal link to clipboard
   const handleCopyLink = (cabinetId: string) => {
-    const cabinetObj = cabinets[cabinetId];
-    if (!cabinetObj) {
-      alert('Ошибка: кабинет не найден.');
-      return;
-    }
-    const encoded = encodeData(cabinetObj);
     let origin = window.location.origin;
     if (origin.includes('ais-dev-')) {
       origin = origin.replace('ais-dev-', 'ais-pre-');
     }
-    const link = `${origin}${window.location.pathname}?cabinet_data=${encoded}`;
+    const link = `${origin}${window.location.pathname}?cabinet=${cabinetId}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopiedId(cabinetId);
       setTimeout(() => setCopiedId(null), 2000);

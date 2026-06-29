@@ -281,16 +281,22 @@ export default function App() {
 
         if (isCabsModified) {
           localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabinets));
-          if (user) {
-            try {
+          try {
+            // Write each cabinet to public cabinets collection so students can fetch it by ID
+            for (const cab of Object.values(localCabinets)) {
+              if (cab.tutorId === activeTutorId) {
+                await setDoc(doc(db, 'cabinets', cab.id), cab);
+              }
+            }
+            if (user) {
               const userDocRef = doc(db, 'users', user.uid);
               await setDoc(userDocRef, {
                 cabinets: localCabinets,
                 lastUpdated: new Date().toISOString()
               }, { merge: true });
-            } catch (err) {
-              console.error('Failed to sync cabinets to Firestore:', err);
             }
+          } catch (err) {
+            console.error('Failed to sync cabinets to Firestore:', err);
           }
         }
 
