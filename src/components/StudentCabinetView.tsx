@@ -424,6 +424,18 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
         </div>
       </header>
 
+      {cabinetData && (
+        <div className="bg-purple-500/10 border-b border-purple-500/20 py-3 px-6 shadow-xs animate-fade-in">
+          <div className="max-w-6xl mx-auto flex items-start sm:items-center gap-3 text-xs text-purple-900 font-sans font-medium">
+            <Award className="w-5 h-5 text-purple-600 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <span className="font-bold text-purple-950">⚡ Автономный режим активен:</span>{' '}
+              Этот кабинет работает без баз данных и не требует VPN. Твои ответы сохраняются локально в твоем браузере. В конце теста ты получишь специальный короткий текстовый код, который нужно отправить преподавателю.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Container */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-8">
         {activeTest ? (

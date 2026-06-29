@@ -1,32 +1,36 @@
+import LZString from 'lz-string';
+
 /**
  * Safe encoding and decoding of Unicode JSON objects to and from Base64.
- * This is 100% safe for Russian Cyrillic letters.
+ * Uses lz-string for high-efficiency URL-safe compression.
  */
 
 export function encodeData(data: any): string {
   try {
     const jsonStr = JSON.stringify(data);
-    const utf8Bytes = new TextEncoder().encode(jsonStr);
-    let binary = '';
-    const len = utf8Bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(utf8Bytes[i]);
-    }
-    return btoa(binary)
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, ''); // URL-safe base64
+    return LZString.compressToEncodedURIComponent(jsonStr);
   } catch (e) {
     console.error('Encoding error:', e);
     return '';
   }
 }
 
-export function decodeData(base64: string): any {
-  if (!base64) return null;
+export function decodeData(compressedBase64: string): any {
+  if (!compressedBase64) return null;
+  
+  // 1. Try to decompress using lz-string
   try {
-    // Restore standard base64 characters
-    let normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
+    const decompressed = LZString.decompressFromEncodedURIComponent(compressedBase64);
+    if (decompressed) {
+      return JSON.parse(decompressed);
+    }
+  } catch (e) {
+    // If lz-string fails, we proceed to fallback base64 decoding
+  }
+
+  // 2. Fallback to old base64 decoding method for backward compatibility
+  try {
+    let normalized = compressedBase64.replace(/-/g, '+').replace(/_/g, '/');
     while (normalized.length % 4) {
       normalized += '=';
     }
@@ -38,7 +42,8 @@ export function decodeData(base64: string): any {
     const jsonStr = new TextDecoder().decode(bytes);
     return JSON.parse(jsonStr);
   } catch (e) {
-    console.error('Decoding error:', e);
+    console.error('Decoding error in both lz-string and fallback:', e);
     return null;
   }
 }
+

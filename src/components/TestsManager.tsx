@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { Student, TestTemplate, TestQuestion, StudentCabinet, AssignedTest } from '../types';
 import { decodeData, encodeData } from '../utils/codec';
 import { 
-  Plus, Edit3, Trash2, Link2, Copy, Check, Clock, AlertTriangle, 
+  Plus, Edit3, Trash2, Link2, Copy, Check, Clock, AlertTriangle, RefreshCw,
   ChevronRight, ArrowLeft, Eye, Send, CheckCircle2, XCircle, 
   HelpCircle, BookOpen, User, FolderOpen, Award, Layers, ClipboardList, X
 } from 'lucide-react';
@@ -46,7 +46,8 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
   const [assignTargetCabinetId, setAssignTargetCabinetId] = useState<string | null>(null);
   
   // Feedback states
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedCloudId, setCopiedCloudId] = useState<string | null>(null);
+  const [copiedOfflineId, setCopiedOfflineId] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Import Answers States
@@ -75,7 +76,7 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       }
     }
 
-    base64Part = base64Part.replace(/[^A-Za-z0-9\-_]/g, '');
+    base64Part = base64Part.replace(/[^A-Za-z0-9\-_$]/g, '');
 
     const decoded = decodeData(base64Part);
     if (!decoded || !decoded.cabinetId || !decoded.testId) {
@@ -557,18 +558,39 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     alert(`Тест "${template.title}" успешно назначен ученику ${cabinet.studentName}!`);
   };
 
-  // Copy personal link to clipboard
-  const handleCopyLink = (cabinetId: string) => {
+  // Copy personal link to clipboard (Cloud Link)
+  const handleCopyLinkCloud = (cabinetId: string) => {
     let origin = window.location.origin;
     if (origin.includes('ais-dev-')) {
       origin = origin.replace('ais-dev-', 'ais-pre-');
     }
     const link = `${origin}${window.location.pathname}?cabinet=${cabinetId}`;
     navigator.clipboard.writeText(link).then(() => {
-      setCopiedId(cabinetId);
-      setTimeout(() => setCopiedId(null), 2000);
+      setCopiedCloudId(cabinetId);
+      setTimeout(() => setCopiedCloudId(null), 2000);
     }).catch(err => {
       console.error('Failed to copy:', err);
+    });
+  };
+
+  // Copy personal link to clipboard (Offline Link - compressed with lz-string)
+  const handleCopyLinkOffline = (cabinetId: string) => {
+    const cabinetObj = cabinets[cabinetId];
+    if (!cabinetObj) {
+      alert('Ошибка: кабинет не найден.');
+      return;
+    }
+    const encoded = encodeData(cabinetObj);
+    let origin = window.location.origin;
+    if (origin.includes('ais-dev-')) {
+      origin = origin.replace('ais-dev-', 'ais-pre-');
+    }
+    const link = `${origin}${window.location.pathname}?cabinet_data=${encoded}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedOfflineId(cabinetId);
+      setTimeout(() => setCopiedOfflineId(null), 2000);
+    }).catch(err => {
+      console.error('Failed to copy offline link:', err);
     });
   };
 
@@ -742,25 +764,48 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                           {cabinet ? (
                             <>
-                              {/* Copy Link Button */}
+                              {/* Cloud Copy Link Button */}
                               <button
-                                onClick={() => handleCopyLink(cabinet.id)}
-                                className={`px-3 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1 transition-all cursor-pointer ${
-                                  copiedId === cabinet.id
-                                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                                onClick={() => handleCopyLinkCloud(cabinet.id)}
+                                className={`px-2.5 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1 transition-all cursor-pointer ${
+                                  copiedCloudId === cabinet.id
+                                    ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
                                     : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70 hover:text-white'
                                 }`}
-                                title="Скопировать персональную ссылку для ученика"
+                                title="Короткая ссылка через облако. Требует VPN/интернет у ученика"
                               >
-                                {copiedId === cabinet.id ? (
+                                {copiedCloudId === cabinet.id ? (
                                   <>
                                     <Check className="w-3.5 h-3.5" />
-                                    <span>Ссылка скопирована!</span>
+                                    <span>Облако скопировано!</span>
                                   </>
                                 ) : (
                                   <>
-                                    <Copy className="w-3.5 h-3.5" />
-                                    <span>Копировать ссылку</span>
+                                    <RefreshCw className="w-3 h-3 text-emerald-400" />
+                                    <span>Короткая (Облако)</span>
+                                  </>
+                                )}
+                              </button>
+
+                              {/* Offline Copy Link Button */}
+                              <button
+                                onClick={() => handleCopyLinkOffline(cabinet.id)}
+                                className={`px-2.5 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1 transition-all cursor-pointer ${
+                                  copiedOfflineId === cabinet.id
+                                    ? 'bg-purple-500/20 border-purple-500/35 text-purple-200'
+                                    : 'bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/10 text-purple-300/80 hover:text-purple-200'
+                                }`}
+                                title="Оффлайн-ссылка (без баз данных, сжатая). Работает везде и без VPN!"
+                              >
+                                {copiedOfflineId === cabinet.id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Оффлайн скопирован!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Award className="w-3 h-3 text-purple-400" />
+                                    <span>Оффлайн (Без баз)</span>
                                   </>
                                 )}
                               </button>
