@@ -232,6 +232,7 @@ export default function App() {
         }
 
         let isCabsModified = false;
+        const modifiedCabinetIds: string[] = [];
 
         for (let i = 0; i < updatedStudentsList.length; i++) {
           const student = updatedStudentsList[i];
@@ -252,6 +253,7 @@ export default function App() {
               if (isCabinetModified) {
                 localCabinets[cabinetId] = cabinetObj;
                 isCabsModified = true;
+                modifiedCabinetIds.push(cabinetId);
               }
             }
             continue;
@@ -272,6 +274,7 @@ export default function App() {
             // Save to local map
             localCabinets[cabinetId] = newCabinet;
             isCabsModified = true;
+            modifiedCabinetIds.push(cabinetId);
             
             // Mark student to be updated with the new cabinetId
             updatedStudentsList[i] = { ...student, cabinetId };
@@ -282,9 +285,10 @@ export default function App() {
         if (isCabsModified) {
           localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabinets));
           try {
-            // Write each cabinet to public cabinets collection so students can fetch it by ID
-            for (const cab of Object.values(localCabinets)) {
-              if (cab.tutorId === activeTutorId) {
+            // Write only modified or new cabinets to public cabinets collection
+            for (const cabId of modifiedCabinetIds) {
+              const cab = localCabinets[cabId];
+              if (cab && cab.tutorId === activeTutorId) {
                 await setDoc(doc(db, 'cabinets', cab.id), cab);
               }
             }

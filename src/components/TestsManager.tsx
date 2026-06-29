@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, TestTemplate, TestQuestion, StudentCabinet, AssignedTest } from '../types';
 import { decodeData, encodeData } from '../utils/codec';
@@ -152,15 +152,32 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       return id;
     })();
 
-    const q = collection(db, 'cabinets');
+    const q = query(collection(db, 'cabinets'), where('tutorId', '==', activeTutorId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded: Record<string, StudentCabinet> = {};
+      let localCabs: Record<string, StudentCabinet> = {};
+      try {
+        const stored = localStorage.getItem('tutor_local_cabinets');
+        if (stored) {
+          localCabs = JSON.parse(stored);
+        }
+      } catch (e) {}
+
+      const loaded: Record<string, StudentCabinet> = { ...localCabs };
+      
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as StudentCabinet;
-        if (data.tutorId === activeTutorId) {
-          loaded[data.id] = data;
-        }
+        // Merge cloud data
+        loaded[data.id] = data;
       });
+
+      // To prevent race conditions, do not delete newly created local cabinets that haven't finished uploading to cloud yet
+      const cloudIds = new Set(snapshot.docs.map(d => d.id));
+      for (const id of Object.keys(localCabs)) {
+        if (!cloudIds.has(id)) {
+          loaded[id] = localCabs[id];
+        }
+      }
+
       setCabinets(loaded);
       localStorage.setItem('tutor_local_cabinets', JSON.stringify(loaded));
       setLoadingCabinets(false);
@@ -172,18 +189,41 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     return () => unsubscribe();
   }, [user]);
 
-  // Save cabinets to LocalStorage and Firestore
+  // Save cabinets to LocalStorage and Firestore (highly optimized with exact differential writes)
   const saveCabinetsToStorage = async (updatedCabs: Record<string, StudentCabinet>) => {
+    const activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
+    
+    // Find modified or new cabinets
+    const modifiedCabs: StudentCabinet[] = [];
+    for (const [id, cab] of Object.entries(updatedCabs)) {
+      const existing = cabinets[id];
+      if (!existing || JSON.stringify(existing) !== JSON.stringify(cab)) {
+        modifiedCabs.push(cab);
+      }
+    }
+    
+    // Find deleted cabinets
+    const deletedIds: string[] = [];
+    for (const id of Object.keys(cabinets)) {
+      if (!updatedCabs[id]) {
+        deletedIds.push(id);
+      }
+    }
+
     setCabinets(updatedCabs);
     localStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
     
-    const activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
     try {
-      // 1. Write individual cabinets to public cabinets collection so students can fetch them
-      for (const cab of Object.values(updatedCabs)) {
+      // 1. Write ONLY modified or new cabinets to public cabinets collection
+      for (const cab of modifiedCabs) {
         if (cab.tutorId === activeTutorId) {
           await setDoc(doc(db, 'cabinets', cab.id), cab);
         }
+      }
+      
+      // Delete deleted cabinets from public collection
+      for (const id of deletedIds) {
+        await deleteDoc(doc(db, 'cabinets', id));
       }
 
       // 2. Write backup to tutor's profile document if logged in
