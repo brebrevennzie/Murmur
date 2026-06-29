@@ -190,7 +190,7 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
     return () => unsubscribe();
   }, [user]);
 
-  // Save cabinets to LocalStorage and Firestore (highly optimized with exact differential writes)
+  // Save cabinets to LocalStorage and Firestore (highly optimized with exact differential writes, fully non-blocking)
   const saveCabinetsToStorage = async (updatedCabs: Record<string, StudentCabinet>) => {
     const activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
     
@@ -211,33 +211,43 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
       }
     }
 
+    // Instantly update local state and localStorage synchronously
     setCabinets(updatedCabs);
     localStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
     
-    try {
-      // 1. Write ONLY modified or new cabinets to public cabinets collection
-      for (const cab of modifiedCabs) {
-        if (cab.tutorId === activeTutorId) {
-          await setDoc(doc(db, 'cabinets', cab.id), cab);
+    // Perform Firestore writes in a non-blocking background queue so that network/VPN blocks cannot freeze the UI
+    (async () => {
+      try {
+        // 1. Write ONLY modified or new cabinets to public cabinets collection
+        for (const cab of modifiedCabs) {
+          if (cab.tutorId === activeTutorId) {
+            setDoc(doc(db, 'cabinets', cab.id), cab).catch(err => {
+              console.warn('Silent warning: Failed to sync cabinet in background:', err);
+            });
+          }
         }
-      }
-      
-      // Delete deleted cabinets from public collection
-      for (const id of deletedIds) {
-        await deleteDoc(doc(db, 'cabinets', id));
-      }
+        
+        // Delete deleted cabinets from public collection
+        for (const id of deletedIds) {
+          deleteDoc(doc(db, 'cabinets', id)).catch(err => {
+            console.warn('Silent warning: Failed to delete cabinet in background:', err);
+          });
+        }
 
-      // 2. Write backup to tutor's profile document if logged in
-      if (user) {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, {
-          cabinets: updatedCabs,
-          lastUpdated: new Date().toISOString()
-        }, { merge: true });
+        // 2. Write backup to tutor's profile document if logged in
+        if (user) {
+          const userDocRef = doc(db, 'users', user.uid);
+          setDoc(userDocRef, {
+            cabinets: updatedCabs,
+            lastUpdated: new Date().toISOString()
+          }, { merge: true }).catch(err => {
+            console.warn('Silent warning: Failed to sync user backup in background:', err);
+          });
+        }
+      } catch (err) {
+        console.warn('Failed background cabinets sync:', err);
       }
-    } catch (err) {
-      console.error('Failed to sync cabinets to Firestore:', err);
-    }
+    })();
   };
 
   // 2. Persist templates to LocalStorage and Firestore

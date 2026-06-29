@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS } from '../types';
+import { Student, MockExam, Lesson, Payment, TopicGap, StudentCabinet, COVER_PRESETS } from '../types';
 import { SvgChart } from './SvgChart';
 import { ParentReportModal } from './ParentReportModal';
 import { PaymentReportModal } from './PaymentReportModal';
 import { parseRawKtpText, normalizeScheduleText } from '../utils/scheduleParser';
 import { safeStorage } from '../utils/safeStorage';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { 
   ArrowLeft, Calendar, Award, CheckCircle2, AlertTriangle, 
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
@@ -38,6 +40,7 @@ interface StudentDetailProps {
   student: Student;
   onBack: () => void;
   onUpdateStudent: (updatedStudent: Student) => void;
+  onPreviewCabinet?: (cabinetId: string) => void;
 }
 
 type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments';
@@ -71,7 +74,7 @@ const isLessonRescheduledOrExtra = (lesson: Lesson, student: Student): boolean =
   return !matchesRegularSchedule;
 };
 
-export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, onUpdateStudent }) => {
+export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, onUpdateStudent, onPreviewCabinet }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
   const [showParentReport, setShowParentReport] = useState(false);
@@ -289,6 +292,40 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
     navigator.clipboard.writeText(link).then(() => {
       setCopiedCabinet(true);
       setTimeout(() => setCopiedCabinet(false), 3000);
+    });
+  };
+
+  const handleCreateCabinet = async () => {
+    const cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
+    const activeTutorId = safeStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`;
+    
+    const newCabinet: StudentCabinet = {
+      id: cabinetId,
+      studentId: student.id,
+      studentName: student.name,
+      tutorId: activeTutorId,
+      createdAt: new Date().toISOString(),
+      assignedTests: []
+    };
+
+    try {
+      await setDoc(doc(db, 'cabinets', cabinetId), newCabinet);
+      const stored = localStorage.getItem('tutor_local_cabinets');
+      let localCabs = {};
+      if (stored) {
+        try {
+          localCabs = JSON.parse(stored);
+        } catch {}
+      }
+      const updatedCabs = { ...localCabs, [cabinetId]: newCabinet };
+      localStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
+    } catch (e) {
+      console.error('Error creating cabinet in Firestore:', e);
+    }
+
+    onUpdateStudent({
+      ...student,
+      cabinetId: cabinetId
     });
   };
 
@@ -741,28 +778,51 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             <div className="bg-gradient-to-br from-[#F4B5CD]/[0.06] via-white/[0.02] to-white/[0.01] backdrop-blur-xl p-4 border border-[#F4B5CD]/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl shadow-xl min-w-[280px]">
               <div>
                 <span className="text-[9px] text-[#F4B5CD] uppercase font-bold tracking-widest block font-sans">Личный кабинет ученика</span>
-                <p className="text-xs text-white/70 font-sans mt-1">Доступ по прямой ссылке без пароля</p>
+                <p className="text-xs text-white/70 font-sans mt-1">
+                  {student.cabinetId ? 'Доступ по прямой ссылке без пароля' : 'Кабинет еще не создан'}
+                </p>
               </div>
-              <button
-                onClick={handleCopyCabinetLink}
-                className={`py-1.5 px-3.5 border text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm ${
-                  copiedCabinet
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                    : 'bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 text-[#F4B5CD] border-[#F4B5CD]/30'
-                }`}
-              >
-                {copiedCabinet ? (
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                {student.cabinetId ? (
                   <>
-                    <Check className="w-3.5 h-3.5 animate-pulse" />
-                    Ссылка скопирована
+                    <button
+                      onClick={() => onPreviewCabinet?.(student.cabinetId!)}
+                      className="py-1.5 px-3.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-purple-300" />
+                      Войти в кабинет
+                    </button>
+                    <button
+                      onClick={handleCopyCabinetLink}
+                      className={`py-1.5 px-3.5 border text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm ${
+                        copiedCabinet
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : 'bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 text-[#F4B5CD] border-[#F4B5CD]/30'
+                      }`}
+                    >
+                      {copiedCabinet ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 animate-pulse" />
+                          Ссылка скопирована
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          Поделиться
+                        </>
+                      )}
+                    </button>
                   </>
                 ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    Поделиться кабинетом
-                  </>
+                  <button
+                    onClick={handleCreateCabinet}
+                    className="py-1.5 px-3.5 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/35 text-[#F4B5CD] text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Создать личный кабинет
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
           </div>
         </div>

@@ -37,6 +37,59 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Ensure body has dark theme class
+  useEffect(() => {
+    const bodyClass = document.body.classList;
+    bodyClass.add('theme-cosmic');
+    bodyClass.remove('theme-gothic');
+  }, []);
+
+  // Robust function to merge incoming assigned tests list with local browser submissions history
+  const mergeAssignedTests = (incomingTests: AssignedTest[], cabId: string): AssignedTest[] => {
+    const localSubmittedMap: Record<string, AssignedTest> = {};
+
+    // 1. Recover from student_progress_${cabId}
+    try {
+      const progressStr = localStorage.getItem(`student_progress_${cabId}`);
+      if (progressStr) {
+        const savedTests = JSON.parse(progressStr) as AssignedTest[];
+        savedTests.forEach(t => {
+          if (t && t.id && t.status === 'submitted') {
+            localSubmittedMap[t.id] = t;
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Silent warning: failed to parse student_progress:', e);
+    }
+
+    // 2. Recover from student_cabinet_${cabId} to be 100% resilient
+    try {
+      const storedCabStr = localStorage.getItem(`student_cabinet_${cabId}`);
+      if (storedCabStr) {
+        const storedCab = JSON.parse(storedCabStr) as StudentCabinet;
+        if (storedCab && Array.isArray(storedCab.assignedTests)) {
+          storedCab.assignedTests.forEach(t => {
+            if (t && t.id && t.status === 'submitted') {
+              localSubmittedMap[t.id] = t;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Silent warning: failed to parse student_cabinet local backup:', e);
+    }
+
+    // 3. Merge: if a test has been completed locally, preserve its answers & scores
+    return incomingTests.map(test => {
+      const localCompleted = localSubmittedMap[test.id];
+      if (localCompleted) {
+        return { ...test, ...localCompleted };
+      }
+      return test;
+    });
+  };
+
   // 1. Fetch or decode cabinet data
   useEffect(() => {
     setLoading(true);
@@ -62,21 +115,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
           let fetchedCab = snap.data() as StudentCabinet;
           
           // Merge with student's local submissions progress to preserve completed tests
-          const progressKey = `student_progress_${cabinetId}`;
-          const savedProgressStr = localStorage.getItem(progressKey);
-          if (savedProgressStr) {
-            try {
-              const savedTests = JSON.parse(savedProgressStr) as AssignedTest[];
-              const mergedTests = fetchedCab.assignedTests.map(test => {
-                const saved = savedTests.find(t => t.id === test.id);
-                if (saved && saved.status === 'submitted') {
-                  return { ...test, ...saved };
-                }
-                return test;
-              });
-              fetchedCab = { ...fetchedCab, assignedTests: mergedTests };
-            } catch (e) {}
-          }
+          fetchedCab.assignedTests = mergeAssignedTests(fetchedCab.assignedTests, cabinetId);
           
           setCabinet(fetchedCab);
           localStorage.setItem(`student_cabinet_${cabinetId}`, JSON.stringify(fetchedCab));
@@ -85,7 +124,9 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
           const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
           if (stored) {
             try {
-              setCabinet(JSON.parse(stored));
+              const parsed = JSON.parse(stored) as StudentCabinet;
+              parsed.assignedTests = mergeAssignedTests(parsed.assignedTests, cabinetId);
+              setCabinet(parsed);
             } catch (e) {
               setError('Кабинет не найден в системе. Обратитесь к преподавателю за ссылкой.');
             }
@@ -100,7 +141,9 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
         const stored = localStorage.getItem(`student_cabinet_${cabinetId}`);
         if (stored) {
           try {
-            setCabinet(JSON.parse(stored));
+            const parsed = JSON.parse(stored) as StudentCabinet;
+            parsed.assignedTests = mergeAssignedTests(parsed.assignedTests, cabinetId);
+            setCabinet(parsed);
           } catch (e) {
             setError('Ошибка подключения к базе данных.');
           }
@@ -114,26 +157,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
     if (decodedCab) {
       // Merge with student's local submissions progress to preserve completed tests
-      const cabId = decodedCab.id;
-      const progressKey = `student_progress_${cabId}`;
-      const savedProgressStr = localStorage.getItem(progressKey);
-      if (savedProgressStr) {
-        try {
-          const savedTests = JSON.parse(savedProgressStr) as AssignedTest[];
-          // Map assigned tests: if they are completed in saved progress, update them
-          const mergedTests = decodedCab.assignedTests.map(test => {
-            const saved = savedTests.find(t => t.id === test.id);
-            if (saved && saved.status === 'submitted') {
-              return { ...test, ...saved };
-            }
-            return test;
-          });
-          decodedCab = { ...decodedCab, assignedTests: mergedTests };
-        } catch (e) {
-          console.error('Error merging saved progress:', e);
-        }
-      }
-
+      decodedCab.assignedTests = mergeAssignedTests(decodedCab.assignedTests, decodedCab.id);
       setCabinet(decodedCab);
       // Save original/decoded cabinet structure locally as fallback
       localStorage.setItem(`student_cabinet_${decodedCab.id}`, JSON.stringify(decodedCab));
@@ -240,11 +264,44 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     return false;
   }
 
+  // Autosave draft answers
+  useEffect(() => {
+    if (activeTest && cabinet) {
+      const draftKey = `student_draft_${cabinet.id}_${activeTest.id}`;
+      const draftData = {
+        answers: studentAnswers,
+        wantToDiscuss,
+        timeSpent,
+        tabSwitches
+      };
+      localStorage.setItem(draftKey, JSON.stringify(draftData));
+    }
+  }, [studentAnswers, wantToDiscuss, timeSpent, tabSwitches, activeTest, cabinet]);
+
   // Handle Test Start
   const handleStartTest = (test: AssignedTest) => {
     setActiveTest(test);
+    
+    // Attempt to restore draft
+    const draftKey = `student_draft_${cabinet?.id}_${test.id}`;
+    const storedDraft = localStorage.getItem(draftKey);
+    if (storedDraft) {
+      try {
+        const parsed = JSON.parse(storedDraft);
+        setStudentAnswers(parsed.answers || {});
+        setWantToDiscuss(parsed.wantToDiscuss || {});
+        setTimeSpent(parsed.timeSpent || 0);
+        setTabSwitches(parsed.tabSwitches || 0);
+        return;
+      } catch (e) {
+        console.error('Error loading draft:', e);
+      }
+    }
+    
     setStudentAnswers({});
     setWantToDiscuss({});
+    setTimeSpent(0);
+    setTabSwitches(0);
   };
 
   // Answer handler
@@ -330,12 +387,10 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
         onSaveAnswers(updatedCabinet);
       }
 
-      // Save directly to public Firestore collection for real-time teacher updates!
-      try {
-        await setDoc(doc(db, 'cabinets', cabinet.id), updatedCabinet);
-      } catch (err) {
-        console.error('Failed to sync student answers to Firestore:', err);
-      }
+      // Save directly to public Firestore collection for real-time teacher updates (non-blocking)
+      setDoc(doc(db, 'cabinets', cabinet.id), updatedCabinet).catch(err => {
+        console.warn('Silent warning: Failed to sync student answers to Firestore in background:', err);
+      });
 
       // 2. Update local state
       setCabinet(updatedCabinet);
@@ -344,6 +399,9 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
       const progressKey = `student_progress_${cabinet.id}`;
       localStorage.setItem(progressKey, JSON.stringify(updatedAssignedTests));
       localStorage.setItem(`student_cabinet_${cabinet.id}`, JSON.stringify(updatedCabinet));
+      
+      // Clear draft answers as the test is successfully submitted
+      localStorage.removeItem(`student_draft_${cabinet.id}_${activeTest.id}`);
 
       // 4. Generate result code for the student to send to their teacher
       const resultPayload = {
@@ -405,20 +463,21 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
   const maxQuestionsCount = Math.max(...cabinet.assignedTests.map(t => t.questions.length), 0);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-purple-100 selection:text-purple-900 pb-12">
-      {/* Light Theme Header */}
-      <header className="bg-white border-b border-slate-200 py-5 px-6 shadow-xs sticky top-0 z-50">
+    <div className="min-h-screen text-white/90 font-sans selection:bg-purple-500/30 selection:text-white pb-12">
+      {/* Dynamic Cosmic Theme Header */}
+      <header className="bg-[#12131a]/80 backdrop-blur-md border-b border-white/10 py-5 px-6 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-xl shadow-xs border border-purple-100">
+            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-xl shadow-xs border border-white/10">
               🎓
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-900 leading-tight">Кабинет ученика</h1>
-              <p className="text-xs text-slate-500 font-medium">Привет, {cabinet.studentName}! Рады видеть тебя 👋</p>
+              <h1 className="text-base font-bold text-white leading-tight">Кабинет ученика</h1>
+              <p className="text-xs text-white/50 font-medium">Привет, {cabinet.studentName}! Рады видеть тебя 👋</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-slate-100 text-slate-600 text-[10px] font-mono tracking-wider uppercase font-bold px-3 py-1.5 rounded-lg border border-slate-200">
+          <div className="flex items-center gap-2 bg-white/5 text-[#C3B4FC] text-[10px] font-mono tracking-wider uppercase font-bold px-3 py-1.5 rounded-lg border border-white/10">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>Статус: Активен</span>
           </div>
         </div>
@@ -426,10 +485,10 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
       {cabinetData && (
         <div className="bg-purple-500/10 border-b border-purple-500/20 py-3 px-6 shadow-xs animate-fade-in">
-          <div className="max-w-6xl mx-auto flex items-start sm:items-center gap-3 text-xs text-purple-900 font-sans font-medium">
-            <Award className="w-5 h-5 text-purple-600 shrink-0 mt-0.5 sm:mt-0" />
+          <div className="max-w-6xl mx-auto flex items-start sm:items-center gap-3 text-xs text-purple-200 font-sans font-medium">
+            <Award className="w-5 h-5 text-purple-400 shrink-0 mt-0.5 sm:mt-0" />
             <div>
-              <span className="font-bold text-purple-950">⚡ Автономный режим активен:</span>{' '}
+              <span className="font-bold text-purple-300">⚡ Автономный режим активен:</span>{' '}
               Этот кабинет работает без баз данных и не требует VPN. Твои ответы сохраняются локально в твоем браузере. В конце теста ты получишь специальный короткий текстовый код, который нужно отправить преподавателю.
             </div>
           </div>
@@ -442,25 +501,25 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
           /* Active Test Solver Interface */
           <div className="max-w-3xl mx-auto">
             {/* Header / Info bar */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="bg-[#12131a]/80 border border-white/10 rounded-2xl p-5 mb-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-purple-600 uppercase tracking-widest block font-mono">
+                <span className="text-[10px] font-bold text-[#C3B4FC] uppercase tracking-widest block font-mono">
                   {activeTest.type === 'OGE' ? 'Подготовка к ОГЭ' : 'Подготовка к ЕГЭ'}
                 </span>
-                <h2 className="text-lg font-bold text-slate-900">{activeTest.title}</h2>
+                <h2 className="text-lg font-bold text-white">{activeTest.title}</h2>
               </div>
               
               <div className="flex items-center gap-4">
                 {/* Timer Display */}
-                <div className="flex items-center gap-2 bg-purple-50 text-purple-700 px-4 py-2 rounded-xl border border-purple-100 shadow-xs">
-                  <Clock className="w-4 h-4 text-purple-600 animate-pulse" />
+                <div className="flex items-center gap-2 bg-purple-500/10 text-purple-200 px-4 py-2 rounded-xl border border-purple-500/20 shadow-xs">
+                  <Clock className="w-4 h-4 text-[#C3B4FC] animate-pulse" />
                   <span className="font-mono font-bold text-sm select-none">{formatTime(timeSpent)}</span>
                 </div>
                 
                 {/* Blur warning indicator */}
                 {tabSwitches > 0 && (
-                  <div className="flex items-center gap-1.5 bg-amber-50 text-amber-700 px-3 py-2 rounded-xl border border-amber-100 text-xs font-semibold">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-200 px-3 py-2 rounded-xl border border-amber-500/20 text-xs font-semibold">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     <span>Сворачиваний: {tabSwitches}</span>
                   </div>
                 )}
@@ -474,21 +533,21 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                 const discuss = !!wantToDiscuss[q.id];
 
                 return (
-                  <div key={q.id} className="bg-white border border-slate-200 hover:border-slate-300 rounded-2xl p-6 shadow-xs transition duration-200 relative group">
+                  <div key={q.id} className="bg-[#12131a]/80 border border-white/5 hover:border-white/10 rounded-2xl p-6 shadow-xs transition duration-200 relative group">
                     {/* Header */}
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 mb-4">
+                    <div className="flex items-start justify-between gap-4 border-b border-white/5 pb-3 mb-4">
                       <div>
-                        <span className="text-xs font-bold text-slate-400 font-mono block">Задание {idx + 1}</span>
-                        <h3 className="text-sm font-semibold text-slate-800 mt-0.5">{q.text}</h3>
+                        <span className="text-xs font-bold text-white/30 font-mono block">Задание {idx + 1}</span>
+                        <h3 className="text-sm font-semibold text-white/90 mt-0.5">{q.text}</h3>
                       </div>
                       
                       {/* Discuss Flag Toggle */}
                       <button
                         onClick={() => handleToggleDiscuss(q.id)}
-                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition ${
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition cursor-pointer ${
                           discuss
-                            ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                            ? 'bg-amber-500/15 border-amber-500/25 text-amber-200 shadow-xs'
+                            : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'
                         }`}
                         title="Нажми, если сомневаешься и хочешь обсудить этот вопрос с учителем"
                       >
@@ -501,27 +560,27 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                     <div className="mt-2">
                       {q.type === 'short' && (
                         <div>
-                          <label className="text-xs text-slate-400 font-medium block mb-2">Введите ваш ответ:</label>
+                          <label className="text-xs text-white/40 font-medium block mb-2">Введите ваш ответ:</label>
                           <input
                             type="text"
                             value={answer || ''}
                             onChange={(e) => handleSetAnswer(q.id, e.target.value)}
                             placeholder="Ответ (символы, цифры или слово)..."
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-purple-400 focus:bg-white rounded-xl text-slate-800 text-sm font-medium transition duration-200 outline-none"
+                            className="w-full px-4 py-3 bg-white/5 border border-white/10 focus:border-[#C3B4FC]/50 focus:bg-white/10 rounded-xl text-white text-sm font-medium transition duration-200 outline-none placeholder:text-white/20"
                           />
                         </div>
                       )}
 
                       {q.type === 'single' && (
                         <div className="space-y-2">
-                          <span className="text-xs text-slate-400 font-medium block mb-1">Выберите один вариант:</span>
+                          <span className="text-xs text-white/40 font-medium block mb-1">Выберите один вариант:</span>
                           {q.options?.map((opt, oIdx) => (
                             <label
                               key={oIdx}
                               className={`flex items-center gap-3 px-4 py-3 border rounded-xl cursor-pointer transition duration-150 ${
                                 answer === oIdx
-                                  ? 'bg-purple-50 border-purple-200 text-purple-900 shadow-xs'
-                                  : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                                  ? 'bg-purple-500/15 border-[#C3B4FC]/30 text-[#C3B4FC] shadow-xs'
+                                  : 'bg-white/5 border-white/10 hover:border-white/20 text-white/70'
                               }`}
                             >
                               <input
@@ -529,7 +588,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                                 name={`q-${q.id}`}
                                 checked={answer === oIdx}
                                 onChange={() => handleSetAnswer(q.id, oIdx)}
-                                className="w-4 h-4 text-purple-600 focus:ring-purple-400"
+                                className="w-4 h-4 text-[#C3B4FC] focus:ring-[#C3B4FC] bg-white/5 border-white/10"
                               />
                               <span className="text-xs font-medium">{opt}</span>
                             </label>
@@ -539,7 +598,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
                       {q.type === 'multiple' && (
                         <div className="space-y-2">
-                          <span className="text-xs text-slate-400 font-medium block mb-1">Выберите несколько вариантов:</span>
+                          <span className="text-xs text-white/40 font-medium block mb-1">Выберите несколько вариантов:</span>
                           {q.options?.map((opt, oIdx) => {
                             const currentList = answer || [];
                             const isChecked = !!currentList[oIdx];
@@ -555,15 +614,15 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                                 key={oIdx}
                                 className={`flex items-center gap-3 px-4 py-3 border rounded-xl cursor-pointer transition duration-150 ${
                                   isChecked
-                                    ? 'bg-purple-50 border-purple-200 text-purple-900 shadow-xs'
-                                    : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                                    ? 'bg-purple-500/15 border-[#C3B4FC]/30 text-[#C3B4FC] shadow-xs'
+                                    : 'bg-white/5 border-white/10 hover:border-white/20 text-white/70'
                                 }`}
                               >
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
                                   onChange={handleChange}
-                                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-400"
+                                  className="w-4 h-4 rounded text-[#C3B4FC] focus:ring-[#C3B4FC] bg-white/5 border-white/10"
                                 />
                                 <span className="text-xs font-medium">{opt}</span>
                               </label>
@@ -574,7 +633,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
                       {q.type === 'matching' && (
                         <div className="space-y-4">
-                          <span className="text-xs text-slate-400 font-medium block mb-1">Сопоставьте строки слева с вариантами справа:</span>
+                          <span className="text-xs text-white/40 font-medium block mb-1">Сопоставьте строки слева с вариантами справа:</span>
                           
                           {/* List of left statements */}
                           <div className="space-y-3">
@@ -583,12 +642,12 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                               const selectedRightIdx = currentMapping[lIdx];
 
                               return (
-                                <div key={lIdx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-                                  <div className="flex-1 text-xs font-medium text-slate-700">
+                                <div key={lIdx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3.5">
+                                  <div className="flex-1 text-xs font-medium text-white/70">
                                     {leftStr}
                                   </div>
                                   <div className="flex items-center gap-2 shrink-0">
-                                    <span className="text-xs text-slate-400 font-mono">→</span>
+                                    <span className="text-xs text-white/30 font-mono">→</span>
                                     <select
                                       value={selectedRightIdx !== undefined ? selectedRightIdx : ''}
                                       onChange={(e) => {
@@ -596,11 +655,11 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                                         const newMapping = { ...currentMapping, [lIdx]: val };
                                         handleSetAnswer(q.id, newMapping);
                                       }}
-                                      className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:border-purple-400 outline-none font-medium shadow-xs max-w-[200px]"
+                                      className="bg-[#12131a] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 focus:border-[#C3B4FC] outline-none font-medium shadow-xs max-w-[200px]"
                                     >
                                       <option value="">-- Выбрать --</option>
                                       {q.matchingRight?.map((rightStr, rIdx) => (
-                                        <option key={rIdx} value={rIdx}>
+                                        <option key={rIdx} value={rIdx} className="bg-[#12131a] text-white">
                                           {rightStr}
                                         </option>
                                       ))}
@@ -620,8 +679,8 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
             {/* Error alerts */}
             {submittingError && (
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6 flex items-start gap-3 text-red-800 text-xs">
-                <ShieldAlert className="w-4 h-4 text-red-600 shrink-0" />
+              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-6 flex items-start gap-3 text-red-200 text-xs">
+                <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
                 <span>{submittingError}</span>
               </div>
             )}
@@ -630,18 +689,18 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
             <div className="flex items-center justify-between gap-4 mb-16">
               <button
                 onClick={() => {
-                  if (confirm('Вы уверены, что хотите прервать тест? Прогресс не сохранится.')) {
+                  if (confirm('Вы уверены, что хотите прервать тест? Прогресс сохранится автоматически.')) {
                     setActiveTest(null);
                   }
                 }}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition text-xs font-semibold cursor-pointer"
+                className="px-5 py-2.5 rounded-xl border border-white/10 text-white/50 hover:text-white hover:bg-white/10 transition text-xs font-semibold cursor-pointer"
               >
                 Вернуться назад
               </button>
               
               <button
                 onClick={() => setShowConfirmSubmit(true)}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-md hover:shadow-purple-200 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition duration-200 active:scale-95 cursor-pointer"
+                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-md hover:shadow-purple-500/20 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition duration-200 active:scale-95 cursor-pointer"
               >
                 <CheckCircle className="w-4 h-4" />
                 <span>Завершить и отправить работу</span>
@@ -650,27 +709,27 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
             {/* Confirm Submit Dialog Modal */}
             {showConfirmSubmit && (
-              <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-fadeIn">
-                  <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl mb-4 border border-purple-100 shadow-xs">
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                <div className="bg-[#12131a] border border-white/10 rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-fadeIn text-white">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-xl mb-4 border border-purple-500/20 shadow-xs">
                     ✍️
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 mb-2">Отправить работу?</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                  <h3 className="text-base font-bold text-white mb-2">Отправить работу?</h3>
+                  <p className="text-xs text-white/60 leading-relaxed mb-6">
                     Все ваши ответы будут автоматически проверены. Учитель сразу увидит результаты, включая затраченное время и отметки сомневающихся заданий.
                   </p>
                   
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setShowConfirmSubmit(false)}
-                      className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition text-xs font-semibold"
+                      className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition text-xs font-semibold cursor-pointer"
                     >
                       Ещё порешать
                     </button>
                     <button
                       disabled={isSubmitting}
                       onClick={handleSubmitTest}
-                      className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition active:scale-98 disabled:opacity-50"
+                      className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition active:scale-98 disabled:opacity-50 cursor-pointer"
                     >
                       {isSubmitting ? (
                         <>
@@ -688,21 +747,21 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
 
             {/* Result Code Modal */}
             {resultCodeToCopy && (
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-lg w-full animate-fadeIn">
-                  <div className="w-12 h-12 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center text-xl mb-4 border border-green-100 shadow-xs">
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                <div className="bg-[#12131a] border border-white/10 rounded-3xl p-6 shadow-2xl max-w-lg w-full animate-fadeIn text-white">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl mb-4 border border-emerald-500/20 shadow-xs">
                     🎉
                   </div>
-                  <h3 className="text-lg font-bold text-slate-900 mb-2">Тест успешно выполнен!</h3>
-                  <p className="text-xs text-slate-600 leading-relaxed mb-4">
-                    Твой результат сохранён в твоём браузере. <strong className="text-purple-600">Обязательно скопируй код ниже и отправь его учителю</strong> (в Telegram, WhatsApp или личные сообщения), чтобы он смог внести результаты в свой журнал:
+                  <h3 className="text-lg font-bold text-white mb-2">Тест успешно выполнен!</h3>
+                  <p className="text-xs text-white/70 leading-relaxed mb-4">
+                    Твой результат сохранён в твоём браузере. <strong className="text-[#C3B4FC]">Обязательно скопируй код ниже и отправь его учителю</strong> (в Telegram, WhatsApp или личные сообщения), чтобы он смог внести результаты в свой журнал:
                   </p>
                   
                   <div className="relative mb-6">
                     <textarea
                       readOnly
                       value={resultCodeToCopy}
-                      className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      className="w-full h-32 p-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white/80 focus:outline-none focus:ring-1 focus:ring-purple-500"
                     />
                     <button
                       onClick={() => {
@@ -710,7 +769,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                         setCopiedResult(true);
                         setTimeout(() => setCopiedResult(false), 2000);
                       }}
-                      className="absolute right-2 bottom-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 transition"
+                      className="absolute right-2 bottom-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer"
                     >
                       {copiedResult ? (
                         <>
@@ -729,7 +788,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                   <div className="flex items-center justify-end">
                     <button
                       onClick={() => setResultCodeToCopy(null)}
-                      className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition"
+                      className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white/80 font-semibold rounded-xl text-xs transition cursor-pointer"
                     >
                       Закрыть
                     </button>
@@ -744,43 +803,43 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
             {/* Left side: assigned & history */}
             <div className="lg:col-span-8 flex flex-col space-y-8">
               {/* Assigned Pending Tests */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs relative overflow-hidden">
+              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs relative overflow-hidden">
                 <div className="absolute inset-0 bg-radial-at-t from-purple-500/[0.02] to-transparent pointer-events-none" />
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 mb-4">
-                  <span className="text-purple-600">📝</span>
+                <h3 className="font-bold text-white text-base flex items-center gap-2 mb-4">
+                  <span className="text-purple-400">📝</span>
                   Назначенные тесты
                   {pendingTests.length > 0 && (
-                    <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                    <span className="bg-purple-500/20 text-[#C3B4FC] text-[10px] px-2 py-0.5 rounded-full font-bold">
                       {pendingTests.length}
                     </span>
                   )}
                 </h3>
 
                 {pendingTests.length === 0 ? (
-                  <div className="text-center py-10 text-slate-400 text-xs italic">
+                  <div className="text-center py-10 text-white/40 text-xs italic">
                     На данный момент у вас нет невыполненных тестов. Отдыхайте! ☕
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {pendingTests.map(test => (
-                      <div key={test.id} className="bg-slate-50 border border-slate-200 hover:border-purple-200 rounded-xl p-4.5 flex flex-col justify-between hover:bg-purple-50/10 transition duration-200 group">
+                      <div key={test.id} className="bg-white/5 border border-white/10 hover:border-purple-500/30 rounded-xl p-4.5 flex flex-col justify-between hover:bg-purple-500/5 transition duration-200 group">
                         <div>
                           <div className="flex items-center justify-between gap-2 mb-2">
-                            <span className="text-[9px] font-mono font-bold text-purple-600 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded uppercase tracking-wider">
+                            <span className="text-[9px] font-mono font-bold text-[#C3B4FC] bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded uppercase tracking-wider">
                               {test.type === 'OGE' ? 'ОГЭ' : 'ЕГЭ'}
                             </span>
-                            <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1 font-mono">
-                              <Calendar className="w-3 h-3" />
+                            <span className="text-[10px] text-white/40 font-medium flex items-center gap-1 font-mono">
+                              <Calendar className="w-3 h-3 text-white/30" />
                               {test.assignedAt ? new Date(test.assignedAt).toLocaleDateString('ru-RU') : 'Сегодня'}
                             </span>
                           </div>
-                          <h4 className="text-xs font-bold text-slate-800 leading-tight group-hover:text-purple-900 transition">{test.title}</h4>
-                          <p className="text-[10px] text-slate-400 mt-1 font-medium">{test.questions.length} заданий с автопроверкой</p>
+                          <h4 className="text-xs font-bold text-white leading-tight group-hover:text-[#C3B4FC] transition">{test.title}</h4>
+                          <p className="text-[10px] text-white/40 mt-1 font-medium">{test.questions.length} заданий с автопроверкой</p>
                         </div>
-                        <div className="mt-4 pt-3 border-t border-slate-100">
+                        <div className="mt-4 pt-3 border-t border-white/5">
                           <button
                             onClick={() => handleStartTest(test)}
-                            className="w-full py-2 bg-white hover:bg-purple-600 text-purple-600 hover:text-white border border-purple-200 hover:border-purple-600 rounded-lg text-[10px] uppercase font-bold tracking-wider transition duration-200 flex items-center justify-center gap-1.5 active:scale-98 shadow-xs cursor-pointer"
+                            className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] uppercase font-bold tracking-wider transition duration-200 flex items-center justify-center gap-1.5 active:scale-98 shadow-xs cursor-pointer border-none"
                           >
                             <Play className="w-3 h-3 fill-current" />
                             <span>Начать тест</span>
@@ -793,21 +852,21 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
               </div>
 
               {/* History Summary Grid / Table */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs overflow-hidden">
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 mb-4">
-                  <span className="text-slate-700">📊</span>
+              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs overflow-hidden">
+                <h3 className="font-bold text-white text-base flex items-center gap-2 mb-4">
+                  <span>📊</span>
                   Сводная таблица по заданиям
                 </h3>
 
                 {completedTests.length === 0 ? (
-                  <div className="text-center py-10 text-slate-400 text-xs italic">
+                  <div className="text-center py-10 text-white/40 text-xs italic">
                     Пройдите хотя бы один тест, чтобы здесь отображался детальный анализ ваших ответов.
                   </div>
                 ) : (
                   <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse text-[11px]">
                       <thead>
-                        <tr className="border-b border-slate-100 text-slate-400 font-semibold uppercase tracking-wider">
+                        <tr className="border-b border-white/5 text-white/40 font-semibold uppercase tracking-wider">
                           <th className="pb-3 pr-4 font-sans font-medium min-w-[90px]">Дата</th>
                           <th className="pb-3 pr-4 font-sans font-medium min-w-[130px]">Название теста</th>
                           <th className="pb-3 pr-4 font-sans font-medium text-center min-w-[60px]">Итог</th>
@@ -817,20 +876,20 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-white/5">
                         {completedTests.map(test => {
                           const dateObj = test.submittedAt ? new Date(test.submittedAt) : null;
                           const formattedDate = dateObj ? dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '---';
                           
                           return (
-                            <tr key={test.id} className="hover:bg-slate-50/50 transition">
-                              <td className="py-3.5 pr-4 text-slate-500 font-medium font-mono">{formattedDate}</td>
+                            <tr key={test.id} className="hover:bg-white/5 transition">
+                              <td className="py-3.5 pr-4 text-white/50 font-medium font-mono">{formattedDate}</td>
                               <td className="py-3.5 pr-4">
-                                <span className="font-bold text-slate-800 block leading-snug">{test.title}</span>
-                                <span className="text-[9px] text-slate-400 font-medium uppercase font-mono tracking-wider">{test.type === 'OGE' ? 'ОГЭ' : 'ЕГЭ'}</span>
+                                <span className="font-bold text-white block leading-snug">{test.title}</span>
+                                <span className="text-[9px] text-white/40 font-medium uppercase font-mono tracking-wider">{test.type === 'OGE' ? 'ОГЭ' : 'ЕГЭ'}</span>
                               </td>
                               <td className="py-3.5 pr-4 text-center">
-                                <span className="bg-purple-100 text-purple-800 border border-purple-200/50 px-2 py-0.5 rounded-md font-bold font-mono text-[10px]">
+                                <span className="bg-purple-500/20 text-purple-200 border border-purple-500/30 px-2 py-0.5 rounded-md font-bold font-mono text-[10px]">
                                   {test.score}/{test.totalQuestions}
                                 </span>
                               </td>
@@ -839,7 +898,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                               {Array.from({ length: maxQuestionsCount }).map((_, i) => {
                                 const question = test.questions[i];
                                 if (!question) {
-                                  return <td key={i} className="py-3.5 px-1 text-center text-slate-300">-</td>;
+                                  return <td key={i} className="py-3.5 px-1 text-center text-white/20">-</td>;
                                 }
 
                                 const isCorrect = test.checkedResults ? test.checkedResults[question.id] : false;
@@ -849,9 +908,9 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                                   <td key={i} className="py-3.5 px-1 text-center align-middle">
                                     <div className="flex flex-col items-center justify-center gap-0.5">
                                       {isCorrect ? (
-                                        <span className="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center font-mono font-bold text-[10px]" title={`Задание ${i+1}: Верно`}>+</span>
+                                        <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-mono font-bold text-[10px]" title={`Задание ${i+1}: Верно`}>+</span>
                                       ) : (
-                                        <span className="w-5 h-5 rounded-full bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center font-mono font-bold text-[10px]" title={`Задание ${i+1}: Ошибка`}>-</span>
+                                        <span className="w-5 h-5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center font-mono font-bold text-[10px]" title={`Задание ${i+1}: Ошибка`}>-</span>
                                       )}
                                       
                                       {wantDiscuss && (
@@ -874,14 +933,14 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
             {/* Right side: visual chart & metrics stats */}
             <div className="lg:col-span-4 flex flex-col space-y-8">
               {/* Progress dynamic chart */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col">
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2 mb-4">
-                  <span className="text-purple-600">📈</span>
+              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs flex flex-col">
+                <h3 className="font-bold text-white text-base flex items-center gap-2 mb-4">
+                  <span className="text-purple-400">📈</span>
                   График успеваемости
                 </h3>
 
                 {completedTests.length === 0 ? (
-                  <div className="text-center py-10 text-slate-400 text-xs italic flex-1 flex items-center justify-center">
+                  <div className="text-center py-10 text-white/40 text-xs italic flex-1 flex items-center justify-center">
                     График построится после сдачи тестов.
                   </div>
                 ) : (
@@ -890,9 +949,9 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                     <div className="h-44 w-full relative pt-2 mb-2">
                       <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
                         {/* Grid lines */}
-                        <line x1="0" y1="20" x2="100" y2="20" stroke="#f1f5f9" strokeWidth="0.5" />
-                        <line x1="0" y1="50" x2="100" y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
-                        <line x1="0" y1="80" x2="100" y2="80" stroke="#f1f5f9" strokeWidth="0.5" />
+                        <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="0.5" />
+                        <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="0.5" />
+                        <line x1="0" y1="80" x2="100" y2="80" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="0.5" />
                         
                         {/* Score Line */}
                         {(() => {
@@ -937,7 +996,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                                   cx={pt.cx}
                                   cy={pt.cy}
                                   r="3"
-                                  fill="#fff"
+                                  fill="#12131a"
                                   stroke="#8b5cf6"
                                   strokeWidth="2"
                                   className="transition-all hover:r-4 duration-150 cursor-pointer"
@@ -949,7 +1008,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                               <defs>
                                 <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
                                   <stop offset="0%" stopColor="#8b5cf6" />
-                                  <stop offset="100%" stopColor="#fff" />
+                                  <stop offset="100%" stopColor="#12131a" />
                                 </linearGradient>
                               </defs>
                             </>
@@ -959,7 +1018,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                     </div>
 
                     {/* X-axis Labels */}
-                    <div className="flex justify-between text-[9px] text-slate-400 font-bold font-mono px-1">
+                    <div className="flex justify-between text-[9px] text-white/40 font-bold font-mono px-1">
                       {chartPoints.map((pt, i) => (
                         <span key={i} className="truncate max-w-[40px]" title={pt.title}>
                           {pt.date}
@@ -971,22 +1030,22 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
               </div>
 
               {/* General Performance Summary card */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
+              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-1.5 mb-3 border-b border-slate-100 pb-2">
-                    <Award className="w-4 h-4 text-purple-600" />
+                  <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-1.5 mb-3 border-b border-white/5 pb-2">
+                    <Award className="w-4 h-4 text-purple-400" />
                     Результаты
                   </h3>
                   
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 font-medium">Решено тестов:</span>
-                      <span className="text-xs font-bold text-slate-900 font-mono">{completedTests.length}</span>
+                      <span className="text-xs text-white/60 font-medium">Решено тестов:</span>
+                      <span className="text-xs font-bold text-white font-mono">{completedTests.length}</span>
                     </div>
                     
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 font-medium">Средний результат:</span>
-                      <span className="text-xs font-bold text-purple-700 font-mono bg-purple-50 px-2 py-0.5 rounded-md">
+                      <span className="text-xs text-white/60 font-medium">Средний результат:</span>
+                      <span className="text-xs font-bold text-purple-200 font-mono bg-purple-500/20 px-2 py-0.5 rounded-md border border-purple-500/30">
                         {completedTests.length > 0 
                           ? Math.round(completedTests.reduce((sum, t) => sum + (t.totalQuestions ? ((t.score || 0)/t.totalQuestions) * 100 : 0), 0) / completedTests.length)
                           : 0}%
@@ -994,15 +1053,15 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                     </div>
 
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 font-medium">Ожидают решения:</span>
-                      <span className="text-xs font-bold text-slate-900 font-mono">{pendingTests.length}</span>
+                      <span className="text-xs text-white/60 font-medium">Ожидают решения:</span>
+                      <span className="text-xs font-bold text-white font-mono">{pendingTests.length}</span>
                     </div>
                   </div>
                 </div>
 
                 {completedTests.length > 0 && (
-                  <div className="mt-6 p-3.5 bg-purple-50/50 border border-purple-100 rounded-xl">
-                    <p className="text-[10px] text-purple-800 leading-relaxed font-medium">
+                  <div className="mt-6 p-3.5 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+                    <p className="text-[10px] text-purple-200 leading-relaxed font-medium">
                       💡 Результаты тестов сохраняются автоматически и синхронизируются с преподавателем в реальном времени. Все ошибки и сомнительные вопросы можно разобрать на ближайшем уроке!
                     </p>
                   </div>
