@@ -94,6 +94,7 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
 
   // Assign Test modal state
   const [assignTargetCabinetId, setAssignTargetCabinetId] = useState<string | null>(null);
+  const [assignSourceTemplate, setAssignSourceTemplate] = useState<TestTemplate | null>(null);
 
   // Tooltip copy notification
   const [copiedCabinetId, setCopiedCabinetId] = useState<string | null>(null);
@@ -339,6 +340,64 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
     setAssignTargetCabinetId(null);
 
     alert(`Тест "${template.title}" успешно назначен! Теперь скопируйте ссылку кабинета и отправьте ученику.`);
+  };
+
+  // Assign Test to a selected Student's Cabinet from templates library list
+  const handleAssignTestToStudent = (template: TestTemplate, student: Student) => {
+    let cabinetId = student.cabinetId;
+    let currentCabinets = { ...cabinets };
+    
+    if (!cabinetId) {
+      // Create a brand new cabinet on-the-fly for this student
+      cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
+      const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
+      
+      const newCabinet: StudentCabinet = {
+        id: cabinetId,
+        studentId: student.id,
+        studentName: student.name,
+        tutorId: activeTutorId,
+        createdAt: new Date().toISOString(),
+        assignedTests: []
+      };
+      
+      currentCabinets[cabinetId] = newCabinet;
+      
+      // Update student's cabinetId in App context
+      const updatedStudents = students.map(s => s.id === student.id ? { ...s, cabinetId: cabinetId } : s);
+      onUpdateStudents(updatedStudents);
+    }
+
+    const cabinet = currentCabinets[cabinetId];
+    if (!cabinet) return;
+
+    // Check if this test is already assigned to this student
+    const isAlreadyAssigned = (cabinet.assignedTests || []).some(t => t.templateId === template.id);
+    if (isAlreadyAssigned) {
+      alert(`Тест "${template.title}" уже назначен ученику ${student.name}.`);
+      return;
+    }
+
+    const newAssignedTest: AssignedTest = {
+      id: `asg_${Math.random().toString(36).substring(2, 11)}`,
+      templateId: template.id,
+      title: template.title,
+      type: template.type,
+      questions: template.questions.map(q => ({ ...q })), // Deep copy
+      status: 'pending',
+      assignedAt: new Date().toISOString()
+    };
+
+    const updatedCabinet: StudentCabinet = {
+      ...cabinet,
+      assignedTests: [newAssignedTest, ...(cabinet.assignedTests || [])]
+    };
+
+    const updatedCabs = { ...currentCabinets, [cabinetId]: updatedCabinet };
+    saveCabinetsToStorage(updatedCabs);
+    setAssignSourceTemplate(null);
+
+    alert(`Тест "${template.title}" успешно выдан ученику ${student.name}!`);
   };
 
   // Import Student Response Code
@@ -891,8 +950,16 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
                   </button>
 
                   <button
+                    onClick={() => setAssignSourceTemplate(template)}
+                    className="flex-1 py-1.5 px-3 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/35 text-purple-200 text-[10px] uppercase font-extrabold tracking-wider rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer font-mono"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Выдать
+                  </button>
+
+                  <button
                     onClick={() => handleDeleteTemplate(template.id)}
-                    className="py-1.5 px-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg transition cursor-pointer"
+                    className="py-1.5 px-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg transition cursor-pointer"
                     title="Удалить тест"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -941,6 +1008,68 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
                     <span className="text-[#F4B5CD] font-mono font-bold shrink-0">Выбрать →</span>
                   </button>
                 ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Select student to assign template to */}
+      {assignSourceTemplate && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0C0D12] border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative animate-scaleIn">
+            <button
+              onClick={() => setAssignSourceTemplate(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h3 className="text-sm font-extrabold uppercase tracking-wider text-purple-400 font-mono mb-1">
+              Выдать тест ученику
+            </h3>
+            <p className="text-xs text-white/50 mb-5 font-sans leading-relaxed">
+              Выберите ученика, которому хотите выдать тест <span className="text-white font-bold">"{assignSourceTemplate.title}"</span>. Если личный кабинет еще не создан, он будет создан автоматически.
+            </p>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {students.length === 0 ? (
+                <div className="text-center py-6 text-xs text-white/40">
+                  У вас пока нет добавленных учеников.
+                </div>
+              ) : (
+                students.map((student) => {
+                  const hasCabinet = !!student.cabinetId;
+                  return (
+                    <button
+                      key={student.id}
+                      onClick={() => handleAssignTestToStudent(assignSourceTemplate, student)}
+                      className="w-full text-left p-3 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-[#F4B5CD]/30 rounded-xl transition flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div>
+                        <div className="font-bold text-white/90 truncate max-w-[200px] flex items-center gap-2">
+                          <span>{student.emoji}</span>
+                          <span>{student.name}</span>
+                        </div>
+                        <div className="text-[9px] text-white/40 mt-0.5 font-mono">
+                          {student.subject} • {student.gradeClass}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 font-mono">
+                        {hasCabinet ? (
+                          <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded uppercase font-bold">
+                            Кабинет создан
+                          </span>
+                        ) : (
+                          <span className="text-[8px] bg-purple-500/10 text-purple-300 border border-purple-500/25 px-1.5 py-0.5 rounded uppercase font-bold">
+                            + Создать & выдать
+                          </span>
+                        )}
+                        <span className="text-[#F4B5CD] font-bold shrink-0">→</span>
+                      </div>
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>

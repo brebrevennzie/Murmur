@@ -27,7 +27,7 @@ import { TestsManager } from './components/TestsManager';
 export default function App() {
   // Direct student cabinet rendering from URL params (completely decouples student from Firebase)
   const queryParams = new URLSearchParams(window.location.search);
-  const rawCabinetId = queryParams.get('cabinet');
+  const rawCabinetId = queryParams.get('cabinet') || queryParams.get('cabinetId');
   const cabinetId = rawCabinetId ? rawCabinetId.trim() : null;
   const cabinetData = queryParams.get('cabinet_data');
 
