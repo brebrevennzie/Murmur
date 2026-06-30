@@ -20,6 +20,7 @@ import {
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 import { StudentCabinetView } from './components/StudentCabinetView';
 import { TestsManager } from './components/TestsManager';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { doc, setDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -30,7 +31,11 @@ export default function App() {
   const cabinetData = queryParams.get('cabinet_data');
 
   if (cabinetId || cabinetData) {
-    return <StudentCabinetView cabinetId={cabinetId} cabinetData={cabinetData} />;
+    return (
+      <ErrorBoundary fallbackTitle="Ошибка отображения кабинета ученика">
+        <StudentCabinetView cabinetId={cabinetId} cabinetData={cabinetData} />
+      </ErrorBoundary>
+    );
   }
 
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
@@ -43,34 +48,36 @@ export default function App() {
 
   if (previewCabinetId) {
     return (
-      <div className="bg-[#12131a] min-h-screen text-white">
-        <div className="bg-[#12131a]/90 backdrop-blur-md px-6 py-4 flex items-center justify-between border-b border-white/5 sticky top-0 z-50">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setPreviewCabinetId(null);
-              }}
-              className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 transition text-xs flex items-center gap-1.5 cursor-pointer font-bold uppercase tracking-wider border border-white/10"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              В панель преподавателя
-            </button>
-            <div className="text-white/20 font-mono text-xs hidden sm:block">/</div>
-            <div className="text-white/90 text-sm font-semibold items-center gap-2 hidden sm:flex">
-              <span>Режим просмотра кабинета:</span>
-              <span className="bg-purple-500/20 border border-purple-500/30 text-[#C3B4FC] px-2.5 py-1 rounded-xl text-xs font-mono font-bold">
-                {previewCabinetName}
-              </span>
+      <ErrorBoundary fallbackTitle="Ошибка просмотра кабинета">
+        <div className="bg-[#12131a] min-h-screen text-white">
+          <div className="bg-[#12131a]/90 backdrop-blur-md px-6 py-4 flex items-center justify-between border-b border-white/5 sticky top-0 z-50">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setPreviewCabinetId(null);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 transition text-xs flex items-center gap-1.5 cursor-pointer font-bold uppercase tracking-wider border border-white/10"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                В панель преподавателя
+              </button>
+              <div className="text-white/20 font-mono text-xs hidden sm:block">/</div>
+              <div className="text-white/90 text-sm font-semibold items-center gap-2 hidden sm:flex">
+                <span>Режим просмотра кабинета:</span>
+                <span className="bg-purple-500/20 border border-purple-500/30 text-[#C3B4FC] px-2.5 py-1 rounded-xl text-xs font-mono font-bold">
+                  {previewCabinetName}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 rounded-xl text-[10px] text-[#C3B4FC] font-bold uppercase tracking-wider font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
+              <span>Режим репетитора</span>
             </div>
           </div>
-          
-          <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 rounded-xl text-[10px] text-[#C3B4FC] font-bold uppercase tracking-wider font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
-            <span>Режим репетитора</span>
-          </div>
+          <StudentCabinetView cabinetId={previewCabinetId} />
         </div>
-        <StudentCabinetView cabinetId={previewCabinetId} />
-      </div>
+      </ErrorBoundary>
     );
   }
 

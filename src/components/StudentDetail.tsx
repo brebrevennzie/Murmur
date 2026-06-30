@@ -287,7 +287,10 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
   const [copiedCabinet, setCopiedCabinet] = useState(false);
   const handleCopyCabinetLink = () => {
     if (!student.cabinetId) return;
-    const origin = window.location.origin;
+    let origin = window.location.origin;
+    if (origin.includes('ais-dev-')) {
+      origin = origin.replace('ais-dev-', 'ais-pre-');
+    }
     const link = `${origin}${window.location.pathname}?cabinet=${student.cabinetId}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopiedCabinet(true);

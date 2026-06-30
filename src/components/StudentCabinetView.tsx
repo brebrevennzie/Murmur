@@ -451,6 +451,19 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Safe Date Formatter to prevent RangeError runtime crashes
+  const safeFormatDate = (dateStr: string | undefined | null, options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }): string => {
+    if (!dateStr) return 'Сегодня';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '---';
+      return d.toLocaleDateString('ru-RU', options);
+    } catch (e) {
+      console.warn('Failed to parse date:', dateStr, e);
+      return '---';
+    }
+  };
+
   const safeAssignedTests = Array.isArray(cabinet.assignedTests) ? cabinet.assignedTests : [];
   const completedTests = safeAssignedTests.filter(t => t.status === 'submitted');
   const pendingTests = safeAssignedTests.filter(t => t.status === 'pending');
@@ -462,7 +475,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
       return {
         title: t.title,
         percentage,
-        date: t.submittedAt ? new Date(t.submittedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : ''
+        date: safeFormatDate(t.submittedAt, { day: 'numeric', month: 'short' })
       };
     })
     .slice(-10); // last 10 tests
@@ -838,7 +851,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                             </span>
                             <span className="text-[10px] text-white/40 font-medium flex items-center gap-1 font-mono">
                               <Calendar className="w-3 h-3 text-white/30" />
-                              {test.assignedAt ? new Date(test.assignedAt).toLocaleDateString('ru-RU') : 'Сегодня'}
+                              {safeFormatDate(test.assignedAt, { day: 'numeric', month: 'numeric', year: 'numeric' })}
                             </span>
                           </div>
                           <h4 className="text-xs font-bold text-white leading-tight group-hover:text-[#C3B4FC] transition">{test.title}</h4>
@@ -886,8 +899,7 @@ export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabine
                       </thead>
                       <tbody className="divide-y divide-white/5">
                         {completedTests.map(test => {
-                          const dateObj = test.submittedAt ? new Date(test.submittedAt) : null;
-                          const formattedDate = dateObj ? dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '---';
+                          const formattedDate = safeFormatDate(test.submittedAt, { day: 'numeric', month: 'short' });
                           
                           return (
                             <tr key={test.id} className="hover:bg-white/5 transition">

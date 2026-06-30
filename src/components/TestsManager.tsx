@@ -780,19 +780,19 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
                                 className={`px-2.5 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1 transition-all cursor-pointer ${
                                   copiedCloudId === cabinet.id
                                     ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                                    : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70 hover:text-white'
+                                    : 'bg-emerald-500/5 border-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400'
                                 }`}
-                                title="Короткая ссылка через облако. Требует VPN/интернет у ученика"
+                                title="Короткая и надежная ссылка через облако. Работает везде, в том числе в РФ без VPN!"
                               >
                                 {copiedCloudId === cabinet.id ? (
                                   <>
                                     <Check className="w-3.5 h-3.5" />
-                                    <span>Облако скопировано!</span>
+                                    <span>Ссылка скопирована!</span>
                                   </>
                                 ) : (
                                   <>
                                     <RefreshCw className="w-3 h-3 text-emerald-400" />
-                                    <span>Короткая (Облако)</span>
+                                    <span>Короткая (Рекомендуется)</span>
                                   </>
                                 )}
                               </button>
@@ -803,19 +803,19 @@ export function TestsManager({ students, onUpdateStudents, user }: TestsManagerP
                                 className={`px-2.5 py-1.5 rounded-xl border text-[9px] uppercase tracking-wider font-semibold font-mono flex items-center gap-1 transition-all cursor-pointer ${
                                   copiedOfflineId === cabinet.id
                                     ? 'bg-purple-500/20 border-purple-500/35 text-purple-200'
-                                    : 'bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/10 text-purple-300/80 hover:text-purple-200'
+                                    : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/40 hover:text-white'
                                 }`}
-                                title="Оффлайн-ссылка (без баз данных, сжатая). Работает везде и без VPN!"
+                                title="Оффлайн-ссылка (без облачной синхронизации). Внимание: ссылка ОЧЕНЬ длинная и может обрезаться в Telegram/WhatsApp!"
                               >
                                 {copiedOfflineId === cabinet.id ? (
                                   <>
                                     <Check className="w-3.5 h-3.5" />
-                                    <span>Оффлайн скопирован!</span>
+                                    <span>Резерв скопирован!</span>
                                   </>
                                 ) : (
                                   <>
                                     <Award className="w-3 h-3 text-purple-400" />
-                                    <span>Оффлайн (Без баз)</span>
+                                    <span>Длинная (Резерв)</span>
                                   </>
                                 )}
                               </button>
