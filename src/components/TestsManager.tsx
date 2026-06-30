@@ -317,8 +317,25 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
   const handleAssignTest = (template: TestTemplate) => {
     if (!assignTargetCabinetId) return;
 
-    const cabinet = cabinets[assignTargetCabinetId];
-    if (!cabinet) return;
+    let cabinet = cabinets[assignTargetCabinetId];
+    let currentCabinets = { ...cabinets };
+    
+    if (!cabinet) {
+      // Find corresponding student to recreate cabinet
+      const student = students.find(s => s.cabinetId === assignTargetCabinetId);
+      if (!student) return;
+      const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
+      
+      cabinet = {
+        id: assignTargetCabinetId,
+        studentId: student.id,
+        studentName: student.name,
+        tutorId: activeTutorId,
+        createdAt: new Date().toISOString(),
+        assignedTests: []
+      };
+      currentCabinets[assignTargetCabinetId] = cabinet;
+    }
 
     const newAssignedTest: AssignedTest = {
       id: `asg_${Math.random().toString(36).substring(2, 11)}`,
@@ -335,7 +352,7 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
       assignedTests: [newAssignedTest, ...(cabinet.assignedTests || [])]
     };
 
-    const updatedCabs = { ...cabinets, [assignTargetCabinetId]: updatedCabinet };
+    const updatedCabs = { ...currentCabinets, [assignTargetCabinetId]: updatedCabinet };
     saveCabinetsToStorage(updatedCabs);
     setAssignTargetCabinetId(null);
 
@@ -368,8 +385,19 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
       onUpdateStudents(updatedStudents);
     }
 
-    const cabinet = currentCabinets[cabinetId];
-    if (!cabinet) return;
+    let cabinet = currentCabinets[cabinetId];
+    if (!cabinet) {
+      const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
+      cabinet = {
+        id: cabinetId,
+        studentId: student.id,
+        studentName: student.name,
+        tutorId: activeTutorId,
+        createdAt: new Date().toISOString(),
+        assignedTests: []
+      };
+      currentCabinets[cabinetId] = cabinet;
+    }
 
     // Check if this test is already assigned to this student
     const isAlreadyAssigned = (cabinet.assignedTests || []).some(t => t.templateId === template.id);

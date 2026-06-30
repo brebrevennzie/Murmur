@@ -272,6 +272,27 @@ export function StudentCabinetView({ cabinetId, cabinetData }: StudentCabinetVie
   if (activeTest) {
     return (
       <div className="min-h-screen bg-[#0C0D12] text-white/95 pb-20">
+        {/* Tutor Back-to-Dashboard Navigation Banner */}
+        {(safeStorage.getItem('tutor_local_cabinets') || safeStorage.getItem('guest_tutor_id')) && (
+          <div className="bg-gradient-to-r from-purple-950 via-[#F4B5CD]/20 to-purple-950 border-b border-[#F4B5CD]/20 px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs relative z-50">
+            <span className="text-white/80 font-sans text-center sm:text-left">
+              👨‍🏫 Вы зашли по ссылке ученика. Режим просмотра кабинета <strong className="text-white">{cabinet.studentName}</strong>.
+            </span>
+            <button
+              onClick={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('cabinetId');
+                url.searchParams.delete('cabinet');
+                url.searchParams.delete('cabinet_data');
+                window.location.href = url.pathname;
+              }}
+              className="px-3 py-1 bg-[#F4B5CD] hover:bg-[#F4B5CD]/90 text-black font-extrabold uppercase text-[10px] rounded-lg transition font-mono cursor-pointer shrink-0"
+            >
+              Вернуться в панель репетитора
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="sticky top-0 z-50 bg-[#0C0D12]/90 backdrop-blur-md border-b border-white/5 px-4 sm:px-6 py-4 flex items-center justify-between">
           <button
@@ -519,6 +540,27 @@ export function StudentCabinetView({ cabinetId, cabinetData }: StudentCabinetVie
 
   return (
     <div className="min-h-screen bg-[#0C0D12] text-white/95 pb-20 font-sans">
+      {/* Tutor Back-to-Dashboard Navigation Banner */}
+      {(safeStorage.getItem('tutor_local_cabinets') || safeStorage.getItem('guest_tutor_id')) && (
+        <div className="bg-gradient-to-r from-purple-950 via-[#F4B5CD]/20 to-purple-950 border-b border-[#F4B5CD]/20 px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs relative z-50">
+          <span className="text-white/80 font-sans text-center sm:text-left">
+            👨‍🏫 Вы зашли по ссылке ученика. Режим просмотра кабинета <strong className="text-white">{cabinet.studentName}</strong>.
+          </span>
+          <button
+            onClick={() => {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('cabinetId');
+              url.searchParams.delete('cabinet');
+              url.searchParams.delete('cabinet_data');
+              window.location.href = url.pathname;
+            }}
+            className="px-3 py-1 bg-[#F4B5CD] hover:bg-[#F4B5CD]/90 text-black font-extrabold uppercase text-[10px] rounded-lg transition font-mono cursor-pointer shrink-0"
+          >
+            Вернуться в панель репетитора
+          </button>
+        </div>
+      )}
+
       {/* Sparkle background decoration */}
       <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-purple-500/5 to-transparent pointer-events-none select-none" />
 

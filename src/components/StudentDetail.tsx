@@ -4,6 +4,7 @@ import { ParentReportModal } from './ParentReportModal';
 import { PaymentReportModal } from './PaymentReportModal';
 import { parseRawKtpText, normalizeScheduleText } from '../utils/scheduleParser';
 import { safeStorage } from '../utils/safeStorage';
+import { encodeData, toCompact } from '../utils/codec';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { 
@@ -13,7 +14,7 @@ import {
   Video, ExternalLink, Link, X, Trash, Maximize2, Minimize2, Paperclip,
   UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon
 } from 'lucide-react';
-import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS, StudentCabinet } from '../types';
+import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS, StudentCabinet, TestTemplate, AssignedTest } from '../types';
 
 const EMOJI_PRESETS = [
   // Учёба, Предметы и Инструменты
@@ -39,8 +40,11 @@ const getCheckedHomeworkForLesson = (lesson: Lesson, student: Student): string =
 interface StudentDetailProps {
   student: Student;
   cabinet?: StudentCabinet | null;
+  cabinets?: Record<string, StudentCabinet>;
   onBack: () => void;
   onUpdateStudent: (updatedStudent: Student) => void;
+  onUpdateCabinets?: (updatedCabs: Record<string, StudentCabinet>) => void;
+  user?: any;
 }
 
 type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments' | 'cabinet_tests';
@@ -74,12 +78,120 @@ const isLessonRescheduledOrExtra = (lesson: Lesson, student: Student): boolean =
   return !matchesRegularSchedule;
 };
 
-export const StudentDetail: React.FC<StudentDetailProps> = ({ student, cabinet, onBack, onUpdateStudent }) => {
+export const StudentDetail: React.FC<StudentDetailProps> = ({ 
+  student, 
+  cabinet, 
+  cabinets = {}, 
+  onBack, 
+  onUpdateStudent, 
+  onUpdateCabinets, 
+  user 
+}) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
   const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
   const [showParentReport, setShowParentReport] = useState(false);
   const [showPaymentReport, setShowPaymentReport] = useState(false);
+
+  // Load templates inside StudentDetail for direct test issuing
+  const [templates] = useState<TestTemplate[]>(() => {
+    const stored = safeStorage.getItem('tutor_test_templates');
+    try {
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showAssignModal, setShowAssignModal] = useState(false);
+
+  const handleCreateCabinetLocally = () => {
+    const cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
+    const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
+    
+    const newCabinet: StudentCabinet = {
+      id: cabinetId,
+      studentId: student.id,
+      studentName: student.name,
+      tutorId: activeTutorId,
+      createdAt: new Date().toISOString(),
+      assignedTests: []
+    };
+    
+    // Update student
+    onUpdateStudent({ ...student, cabinetId });
+    
+    // Update cabinets
+    if (onUpdateCabinets) {
+      onUpdateCabinets({ ...cabinets, [cabinetId]: newCabinet });
+    }
+    
+    alert('Личный кабинет успешно создан!');
+  };
+
+  const handleAssignTestDirectly = (template: TestTemplate) => {
+    let cabinetId = student.cabinetId;
+    let currentCabinets = { ...cabinets };
+    
+    if (!cabinetId) {
+      cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
+      const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
+      
+      const newCabinet: StudentCabinet = {
+        id: cabinetId,
+        studentId: student.id,
+        studentName: student.name,
+        tutorId: activeTutorId,
+        createdAt: new Date().toISOString(),
+        assignedTests: []
+      };
+      
+      currentCabinets[cabinetId] = newCabinet;
+      onUpdateStudent({ ...student, cabinetId });
+    }
+    
+    let currentCabinet = currentCabinets[cabinetId];
+    if (!currentCabinet) {
+      const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
+      currentCabinet = {
+        id: cabinetId,
+        studentId: student.id,
+        studentName: student.name,
+        tutorId: activeTutorId,
+        createdAt: new Date().toISOString(),
+        assignedTests: []
+      };
+      currentCabinets[cabinetId] = currentCabinet;
+    }
+    
+    // Check if already assigned
+    const isAlreadyAssigned = (currentCabinet.assignedTests || []).some(t => t.templateId === template.id);
+    if (isAlreadyAssigned) {
+      alert(`Тест "${template.title}" уже назначен этому ученику.`);
+      return;
+    }
+    
+    const newAssignedTest: AssignedTest = {
+      id: `asg_${Math.random().toString(36).substring(2, 11)}`,
+      templateId: template.id,
+      title: template.title,
+      type: template.type,
+      questions: template.questions.map(q => ({ ...q })),
+      status: 'pending',
+      assignedAt: new Date().toISOString()
+    };
+    
+    const updatedCabinet: StudentCabinet = {
+      ...currentCabinet,
+      assignedTests: [newAssignedTest, ...(currentCabinet.assignedTests || [])]
+    };
+    
+    if (onUpdateCabinets) {
+      onUpdateCabinets({ ...currentCabinets, [cabinetId]: updatedCabinet });
+    }
+    
+    setShowAssignModal(false);
+    alert(`Тест "${template.title}" успешно выдан ученику!`);
+  };
 
   // Syllabus program states
   const [isSelectingProgram, setIsSelectingProgram] = useState(false);
@@ -1449,19 +1561,17 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, cabinet, 
             <DollarSign className="w-4 h-4" />
             Финансы и абонементы ({student.payments.length})
           </button>
-          {student.cabinetId && (
-            <button
-              onClick={() => setActiveTab('cabinet_tests')}
-              className={`py-2 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 shrink-0 ${
-                activeTab === 'cabinet_tests' 
-                  ? 'border-[#F4B5CD] text-[#F4B5CD] font-bold' 
-                  : 'border-transparent text-white/40 hover:text-white hover:border-white/10'
-              }`}
-            >
-              <Laptop className="w-4.5 h-4.5" />
-              Тесты в Личном Кабинете ({(cabinet?.assignedTests || []).length})
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('cabinet_tests')}
+            className={`py-2 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'cabinet_tests' 
+                ? 'border-[#F4B5CD] text-[#F4B5CD] font-bold' 
+                : 'border-transparent text-white/40 hover:text-white hover:border-white/10'
+            }`}
+          >
+            <Laptop className="w-4.5 h-4.5" />
+            Личный кабинет ({student.cabinetId && cabinet ? (cabinet.assignedTests || []).length : 0})
+          </button>
         </div>
         {activeTab === 'analytics' && (
           <div className="space-y-6">
@@ -2815,59 +2925,150 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, cabinet, 
                   Ученик занимается по индивидуальной ссылке без регистрации. Результаты и черновики мгновенно обновляются в реальном времени.
                 </p>
               </div>
+              {student.cabinetId && cabinet && (
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="w-full sm:w-auto py-2 px-4 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/35 text-[#F4B5CD] text-xs font-extrabold uppercase tracking-wider transition rounded-xl flex items-center justify-center gap-1.5 cursor-pointer font-mono"
+                >
+                  <Plus className="w-4 h-4" />
+                  Выдать тест из библиотеки
+                </button>
+              )}
             </div>
 
-            {/* Quick URL Link Copy bar */}
-            {student.cabinetId && (
-              <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 flex items-center justify-center">
-                    <Link className="w-5 h-5 text-[#F4B5CD]" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-semibold text-white">Индивидуальная ссылка ученика</h4>
-                    <p className="text-[10px] text-white/40 mt-0.5">Ученик видит свои тесты, прошлые баллы и сводный прогресс по этой ссылке</p>
-                  </div>
-                </div>
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={() => {
-                      const link = `${window.location.origin}/?cabinetId=${student.cabinetId}`;
-                      navigator.clipboard.writeText(link);
-                      alert('Ссылка скопирована в буфер обмена!');
-                    }}
-                    className="flex-1 sm:flex-none bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD] px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <Copy className="w-4 h-4" />
-                    Копировать
-                  </button>
-                  <a
-                    href={`${window.location.origin}/?cabinetId=${student.cabinetId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex-1 sm:flex-none bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Открыть ЛК
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {!cabinet ? (
-              <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl">
-                <div className="w-12 h-12 border-4 border-[#F4B5CD]/20 border-t-[#F4B5CD] rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-sm text-white/40">Подключение к облачной синхронизации кабинета...</p>
-              </div>
-            ) : !cabinet.assignedTests || cabinet.assignedTests.length === 0 ? (
-              <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl">
-                <Laptop className="w-10 h-10 text-white/20 mx-auto mb-4" />
-                <h4 className="text-sm font-semibold text-white">В личном кабинете пока нет тестов</h4>
-                <p className="text-xs text-white/40 mt-2 max-w-sm mx-auto">
-                  Нажмите вкладку <strong className="text-white/60">Тесты</strong> в верхнем меню, чтобы собрать и назначить первый тест ученику.
+            {!student.cabinetId ? (
+              <div className="p-12 text-center bg-[#F4B5CD]/5 border border-[#F4B5CD]/15 rounded-3xl max-w-xl mx-auto space-y-5">
+                <Laptop className="w-12 h-12 text-[#F4B5CD] mx-auto opacity-85 animate-pulse" />
+                <h4 className="text-base font-bold text-white">Личный кабинет ученика не создан</h4>
+                <p className="text-xs text-white/50 max-w-md mx-auto leading-relaxed">
+                  Создайте личный кабинет для ученика <span className="text-white font-bold">{student.name}</span>. Это даст ему прямую ссылку для входа без регистрации и паролей. Он сможет проходить тесты, видеть разборы ошибок и статистику.
                 </p>
+                <button
+                  onClick={handleCreateCabinetLocally}
+                  className="py-3 px-6 bg-[#F4B5CD] hover:bg-[#F4B5CD]/95 text-[#0C0D12] text-xs font-extrabold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-2 mx-auto font-mono"
+                >
+                  <Plus className="w-4.5 h-4.5 stroke-[3px]" />
+                  Создать личный кабинет
+                </button>
+              </div>
+            ) : !cabinet ? (
+              <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl max-w-xl mx-auto space-y-4">
+                <div className="w-12 h-12 border-4 border-[#F4B5CD]/25 border-t-[#F4B5CD] rounded-full animate-spin mx-auto"></div>
+                <h4 className="text-sm font-semibold text-white">Подключение к облачной синхронизации...</h4>
+                <p className="text-xs text-white/40 max-w-md mx-auto leading-relaxed">
+                  Пытаемся получить данные личного кабинета из базы данных. Если синхронизация заблокирована провайдером или это первый запуск, вы можете принудительно восстановить кабинет на этом устройстве.
+                </p>
+                <button
+                  onClick={handleCreateCabinetLocally}
+                  className="py-2.5 px-5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 mx-auto font-mono"
+                >
+                  <SparklesIcon className="w-4 h-4 text-[#F4B5CD]" />
+                  Восстановить локально
+                </button>
               </div>
             ) : (
+              <>
+                {/* Quick URL Link Copy bar with dual modes */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Cloud Sync Mode */}
+                  <div className="p-5 bg-gradient-to-br from-white/[0.02] to-white/[0.01] border border-white/5 rounded-2xl flex flex-col justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 flex items-center justify-center shrink-0">
+                        <Link className="w-5 h-5 text-[#F4B5CD]" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-white">Облачная ссылка ученика</h4>
+                        <p className="text-[10px] text-white/40 mt-0.5 leading-normal">
+                          Синхронизируется через интернет. Все результаты и черновики ученика мгновенно поступают на ваш дашборд.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 w-full">
+                      <button
+                        onClick={() => {
+                          const link = `${window.location.origin}/?cabinetId=${student.cabinetId}`;
+                          navigator.clipboard.writeText(link);
+                          alert('Облачная ссылка кабинета скопирована!');
+                        }}
+                        className="flex-1 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD] py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        Копировать ссылку
+                      </button>
+                      <a
+                        href={`${window.location.origin}/?cabinetId=${student.cabinetId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 font-mono"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Открыть ЛК
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Offline Autonomous Mode */}
+                  <div className="p-5 bg-gradient-to-br from-white/[0.02] to-white/[0.01] border border-white/5 rounded-2xl flex flex-col justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
+                        <Laptop className="w-5 h-5 text-purple-300" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-semibold text-white">Автономная офлайн-ссылка</h4>
+                          <span className="text-[8px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded uppercase font-bold shrink-0 font-mono">100% надёжно</span>
+                        </div>
+                        <p className="text-[10px] text-white/40 mt-0.5 leading-normal">
+                          Все тесты закодированы прямо в ссылке. Работает абсолютно всегда, даже без интернета, VPN и баз данных!
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 w-full">
+                      <button
+                        onClick={() => {
+                          const compact = toCompact(cabinet);
+                          const encoded = encodeData(compact);
+                          const link = `${window.location.origin}/?cabinet_data=${encoded}`;
+                          navigator.clipboard.writeText(link);
+                          alert('Автономная ссылка с тестами скопирована! Отправьте её ученику.');
+                        }}
+                        className="flex-1 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-200 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        Копировать автономную
+                      </button>
+                      <button
+                        onClick={() => {
+                          const compact = toCompact(cabinet);
+                          const encoded = encodeData(compact);
+                          const url = `${window.location.origin}/?cabinet_data=${encoded}`;
+                          window.open(url, '_blank');
+                        }}
+                        className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 font-mono"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Открыть автономно
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {!cabinet.assignedTests || cabinet.assignedTests.length === 0 ? (
+                  <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl">
+                    <Laptop className="w-10 h-10 text-white/20 mx-auto mb-4" />
+                    <h4 className="text-sm font-semibold text-white">В личном кабинете пока нет тестов</h4>
+                    <p className="text-xs text-white/40 mt-2 max-w-sm mx-auto mb-5">
+                      Выдайте любой тест из вашей библиотеки шаблонов прямо сейчас.
+                    </p>
+                    <button
+                      onClick={() => setShowAssignModal(true)}
+                      className="py-2 px-5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 text-xs font-extrabold uppercase tracking-wider transition rounded-xl flex items-center justify-center gap-1.5 cursor-pointer font-mono mx-auto"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Выбрать тест из библиотеки
+                    </button>
+                  </div>
+                ) : (
               <div className="space-y-4">
                 {/* Cabinet Stats */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -3025,6 +3226,52 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, cabinet, 
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </>
+        )}
+
+            {/* Modal to assign test from templates inside StudentDetail */}
+            {showAssignModal && (
+              <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-[#0C0D12] border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative animate-scaleIn text-left">
+                  <button
+                    onClick={() => setShowAssignModal(false)}
+                    className="absolute top-4 right-4 p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-purple-400 font-mono mb-1">
+                    Выдать тест из библиотеки
+                  </h3>
+                  <p className="text-xs text-white/50 mb-5 leading-relaxed">
+                    Выберите тест из вашей библиотеки шаблонов, чтобы выдать его ученику <span className="text-white font-bold">{student.name}</span>.
+                  </p>
+
+                  <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                    {templates.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-white/40">
+                        У вас пока нет созданных шаблонов тестов. Сначала добавьте шаблоны во вкладке "Кабинеты & Тесты".
+                      </div>
+                    ) : (
+                      templates.map((tpl) => (
+                        <button
+                          key={tpl.id}
+                          onClick={() => handleAssignTestDirectly(tpl)}
+                          className="w-full text-left p-3.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-[#F4B5CD]/30 rounded-xl transition flex items-center justify-between gap-3 text-xs cursor-pointer"
+                        >
+                          <div>
+                            <div className="font-bold text-white/90 truncate max-w-[200px]">{tpl.title}</div>
+                            <div className="text-[9px] text-white/40 mt-0.5 font-mono">{tpl.type} • {tpl.questions.length} зад.</div>
+                          </div>
+                          <span className="text-[#F4B5CD] font-mono font-bold shrink-0">Выбрать →</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

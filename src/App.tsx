@@ -210,6 +210,13 @@ export default function App() {
     reconnectSync,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
 
+  // Ensure guest tutor has a stable identifier if they are not logged in
+  useEffect(() => {
+    if (!safeStorage.getItem('guest_tutor_id')) {
+      safeStorage.setItem('guest_tutor_id', `guest_${Math.random().toString(36).substring(2, 11)}`);
+    }
+  }, []);
+
   // Cabinets state (lifted up for global dashboard sync, cards & parent reports)
   const [cabinets, setCabinets] = useState<Record<string, StudentCabinet>>(() => {
     const stored = safeStorage.getItem('tutor_local_cabinets');
@@ -279,6 +286,31 @@ export default function App() {
       console.error('Failed to sync updated cabinet to cloud:', err);
     }
   };
+
+  // Migrate guest cabinets to logged-in user if any exist locally
+  useEffect(() => {
+    if (user) {
+      const stored = safeStorage.getItem('tutor_local_cabinets');
+      if (stored) {
+        try {
+          const localCabs = JSON.parse(stored) as Record<string, StudentCabinet>;
+          let migrated = false;
+          const updatedCabs = { ...localCabs };
+          for (const [id, cab] of Object.entries(updatedCabs)) {
+            if (cab.tutorId !== user.uid) {
+              updatedCabs[id] = { ...cab, tutorId: user.uid };
+              migrated = true;
+            }
+          }
+          if (migrated) {
+            handleUpdateCabinets(updatedCabs);
+          }
+        } catch (e) {
+          console.error('Failed to migrate guest cabinets:', e);
+        }
+      }
+    }
+  }, [user]);
 
   const updateTimestamp = () => {
     const timestamp = new Date().toISOString();
@@ -696,8 +728,11 @@ export default function App() {
           <StudentDetail 
             student={selectedStudent}
             cabinet={selectedStudent.cabinetId ? cabinets[selectedStudent.cabinetId] : null}
+            cabinets={cabinets}
             onBack={() => setSelectedStudentId(null)}
             onUpdateStudent={handleUpdateStudent}
+            onUpdateCabinets={handleUpdateCabinets}
+            user={user}
           />
           
           {/* Advanced Danger Option inside Cabinet detail */}
