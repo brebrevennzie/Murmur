@@ -1,13 +1,14 @@
 import React from 'react';
-import { Student } from '../types';
-import { BookOpen, Calendar, CircleDot, DollarSign, Award } from 'lucide-react';
+import { Student, StudentCabinet } from '../types';
+import { BookOpen, Calendar, CircleDot, DollarSign, Award, Laptop } from 'lucide-react';
 
 interface StudentCardProps {
   student: Student;
+  cabinet?: StudentCabinet | null;
   onSelect: () => void;
 }
 
-export const StudentCard: React.FC<StudentCardProps> = ({ student, onSelect }) => {
+export const StudentCard: React.FC<StudentCardProps> = ({ student, cabinet, onSelect }) => {
   // Compute average mock score
   const mockCount = (student.mockExams || []).length;
   const avgPct = mockCount > 0 
@@ -103,6 +104,18 @@ export const StudentCard: React.FC<StudentCardProps> = ({ student, onSelect }) =
             <div className="flex items-center gap-2.5 text-xs text-white/40 border-t border-white/5 pt-3 mt-1 font-serif">
               <BookOpen className="w-3.5 h-3.5 text-white/20" />
               <span>Пробники еще не проводились</span>
+            </div>
+          )}
+          {/* Cabinet Tests Tracker */}
+          {cabinet && (
+            <div className="flex items-center gap-2.5 text-xs text-white/70 border-t border-white/5 pt-3 mt-2">
+              <Laptop className="w-4 h-4 text-[#F4B5CD] shrink-0" />
+              <div className="flex justify-between w-full items-center">
+                <span className="text-white/40 uppercase text-[9px] tracking-wider">Тесты в ЛК:</span>
+                <span className="text-[11px] font-mono text-[#F4B5CD] font-bold">
+                  {cabinet.assignedTests?.filter(t => t.status === 'submitted').length || 0} / {cabinet.assignedTests?.length || 0} решено
+                </span>
+              </div>
             </div>
           )}
         </div>

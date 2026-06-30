@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Student, MockExam, Lesson, Payment, TopicGap, StudentCabinet, COVER_PRESETS } from '../types';
 import { SvgChart } from './SvgChart';
 import { ParentReportModal } from './ParentReportModal';
 import { PaymentReportModal } from './PaymentReportModal';
@@ -12,8 +11,9 @@ import {
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
   HelpCircle, PenTool, ClipboardList, TrendingUp, AlertCircle,
   Video, ExternalLink, Link, X, Trash, Maximize2, Minimize2, Paperclip,
-  UploadCloud, FolderPlus, Copy, Check
+  UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon
 } from 'lucide-react';
+import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS, StudentCabinet } from '../types';
 
 const EMOJI_PRESETS = [
   // Учёба, Предметы и Инструменты
@@ -38,12 +38,12 @@ const getCheckedHomeworkForLesson = (lesson: Lesson, student: Student): string =
 
 interface StudentDetailProps {
   student: Student;
+  cabinet?: StudentCabinet | null;
   onBack: () => void;
   onUpdateStudent: (updatedStudent: Student) => void;
-  onPreviewCabinet?: (cabinetId: string) => void;
 }
 
-type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments';
+type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments' | 'cabinet_tests';
 
 const formatDateToDDMMYY = (dateStr: string): string => {
   if (!dateStr) return '';
@@ -74,8 +74,9 @@ const isLessonRescheduledOrExtra = (lesson: Lesson, student: Student): boolean =
   return !matchesRegularSchedule;
 };
 
-export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, onUpdateStudent, onPreviewCabinet }) => {
+export const StudentDetail: React.FC<StudentDetailProps> = ({ student, cabinet, onBack, onUpdateStudent }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
+  const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
   const [showParentReport, setShowParentReport] = useState(false);
   const [showPaymentReport, setShowPaymentReport] = useState(false);
@@ -284,53 +285,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
     setIsEditingZoom(false);
   };
 
-  const [copiedCabinet, setCopiedCabinet] = useState(false);
-  const handleCopyCabinetLink = () => {
-    if (!student.cabinetId) return;
-    let origin = window.location.origin;
-    if (origin.includes('ais-dev-')) {
-      origin = origin.replace('ais-dev-', 'ais-pre-');
-    }
-    const link = `${origin}${window.location.pathname}?cabinet=${student.cabinetId}`;
-    navigator.clipboard.writeText(link).then(() => {
-      setCopiedCabinet(true);
-      setTimeout(() => setCopiedCabinet(false), 3000);
-    });
-  };
-
-  const handleCreateCabinet = async () => {
-    const cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
-    const activeTutorId = safeStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`;
-    
-    const newCabinet: StudentCabinet = {
-      id: cabinetId,
-      studentId: student.id,
-      studentName: student.name,
-      tutorId: activeTutorId,
-      createdAt: new Date().toISOString(),
-      assignedTests: []
-    };
-
-    try {
-      await setDoc(doc(db, 'cabinets', cabinetId), newCabinet);
-      const stored = localStorage.getItem('tutor_local_cabinets');
-      let localCabs = {};
-      if (stored) {
-        try {
-          localCabs = JSON.parse(stored);
-        } catch {}
-      }
-      const updatedCabs = { ...localCabs, [cabinetId]: newCabinet };
-      localStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
-    } catch (e) {
-      console.error('Error creating cabinet in Firestore:', e);
-    }
-
-    onUpdateStudent({
-      ...student,
-      cabinetId: cabinetId
-    });
-  };
+  // Cabinet actions removed as requested
 
   // Update logic triggers
   const handleSaveNotes = () => {
@@ -775,57 +730,6 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                   </div>
                 </>
               )}
-            </div>
-
-            {/* Student Personal Cabinet Card */}
-            <div className="bg-gradient-to-br from-[#F4B5CD]/[0.06] via-white/[0.02] to-white/[0.01] backdrop-blur-xl p-4 border border-[#F4B5CD]/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl shadow-xl min-w-[280px]">
-              <div>
-                <span className="text-[9px] text-[#F4B5CD] uppercase font-bold tracking-widest block font-sans">Личный кабинет ученика</span>
-                <p className="text-xs text-white/70 font-sans mt-1">
-                  {student.cabinetId ? 'Доступ по прямой ссылке без пароля' : 'Кабинет еще не создан'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                {student.cabinetId ? (
-                  <>
-                    <button
-                      onClick={() => onPreviewCabinet?.(student.cabinetId!)}
-                      className="py-1.5 px-3.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5 text-purple-300" />
-                      Войти в кабинет
-                    </button>
-                    <button
-                      onClick={handleCopyCabinetLink}
-                      className={`py-1.5 px-3.5 border text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm ${
-                        copiedCabinet
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                          : 'bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 text-[#F4B5CD] border-[#F4B5CD]/30'
-                      }`}
-                    >
-                      {copiedCabinet ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 animate-pulse" />
-                          Ссылка скопирована
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          Поделиться
-                        </>
-                      )}
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={handleCreateCabinet}
-                    className="py-1.5 px-3.5 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/35 text-[#F4B5CD] text-[10px] uppercase font-extrabold tracking-wider transition rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Создать личный кабинет
-                  </button>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -1545,6 +1449,19 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
             <DollarSign className="w-4 h-4" />
             Финансы и абонементы ({student.payments.length})
           </button>
+          {student.cabinetId && (
+            <button
+              onClick={() => setActiveTab('cabinet_tests')}
+              className={`py-2 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'cabinet_tests' 
+                  ? 'border-[#F4B5CD] text-[#F4B5CD] font-bold' 
+                  : 'border-transparent text-white/40 hover:text-white hover:border-white/10'
+              }`}
+            >
+              <Laptop className="w-4.5 h-4.5" />
+              Тесты в Личном Кабинете ({(cabinet?.assignedTests || []).length})
+            </button>
+          )}
         </div>
         {activeTab === 'analytics' && (
           <div className="space-y-6">
@@ -2885,6 +2802,233 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, o
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Tab 5: STUDENT CABINET TESTS */}
+        {activeTab === 'cabinet_tests' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="font-serif text-white text-base">Тесты в Личном Кабинете</h3>
+                <p className="text-xs text-white/40 mt-1">
+                  Ученик занимается по индивидуальной ссылке без регистрации. Результаты и черновики мгновенно обновляются в реальном времени.
+                </p>
+              </div>
+            </div>
+
+            {/* Quick URL Link Copy bar */}
+            {student.cabinetId && (
+              <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 flex items-center justify-center">
+                    <Link className="w-5 h-5 text-[#F4B5CD]" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold text-white">Индивидуальная ссылка ученика</h4>
+                    <p className="text-[10px] text-white/40 mt-0.5">Ученик видит свои тесты, прошлые баллы и сводный прогресс по этой ссылке</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/?cabinetId=${student.cabinetId}`;
+                      navigator.clipboard.writeText(link);
+                      alert('Ссылка скопирована в буфер обмена!');
+                    }}
+                    className="flex-1 sm:flex-none bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD] px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Копировать
+                  </button>
+                  <a
+                    href={`${window.location.origin}/?cabinetId=${student.cabinetId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 sm:flex-none bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Открыть ЛК
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {!cabinet ? (
+              <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl">
+                <div className="w-12 h-12 border-4 border-[#F4B5CD]/20 border-t-[#F4B5CD] rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-sm text-white/40">Подключение к облачной синхронизации кабинета...</p>
+              </div>
+            ) : !cabinet.assignedTests || cabinet.assignedTests.length === 0 ? (
+              <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl">
+                <Laptop className="w-10 h-10 text-white/20 mx-auto mb-4" />
+                <h4 className="text-sm font-semibold text-white">В личном кабинете пока нет тестов</h4>
+                <p className="text-xs text-white/40 mt-2 max-w-sm mx-auto">
+                  Нажмите вкладку <strong className="text-white/60">Тесты</strong> в верхнем меню, чтобы собрать и назначить первый тест ученику.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Cabinet Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
+                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">Всего тестов</span>
+                    <span className="text-xl font-bold text-white mt-1 block">{cabinet.assignedTests.length}</span>
+                  </div>
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
+                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">Решено</span>
+                    <span className="text-xl font-bold text-emerald-400 mt-1 block">
+                      {cabinet.assignedTests.filter(t => t.status === 'submitted').length}
+                    </span>
+                  </div>
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
+                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">В процессе</span>
+                    <span className="text-xl font-bold text-amber-400 mt-1 block">
+                      {cabinet.assignedTests.filter(t => t.status === 'draft' || (!t.status && Object.keys(t.answers || {}).length > 0)).length}
+                    </span>
+                  </div>
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
+                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">Средняя точность</span>
+                    <span className="text-xl font-bold text-[#F4B5CD] mt-1 block">
+                      {(() => {
+                        const submitted = cabinet.assignedTests.filter(t => t.status === 'submitted');
+                        if (submitted.length === 0) return '—';
+                        const totalScore = submitted.reduce((acc, t) => acc + (t.score || 0), 0);
+                        const totalQs = submitted.reduce((acc, t) => acc + (t.totalQuestions || t.questions.length), 0);
+                        return totalQs > 0 ? `${Math.round((totalScore / totalQs) * 100)}%` : '—';
+                      })()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tests List */}
+                <div className="border border-white/5 rounded-2xl overflow-hidden bg-white/[0.01]">
+                  <div className="p-4 bg-white/[0.02] border-b border-white/5">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-white/40">Список назначенных тестов</span>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {cabinet.assignedTests.map((assignedTest) => {
+                      const isSubmitted = assignedTest.status === 'submitted';
+                      const isDraft = assignedTest.status === 'draft' || (!assignedTest.status && Object.keys(assignedTest.answers || {}).length > 0);
+                      const discussCount = Object.values(assignedTest.wantToDiscuss || {}).filter(Boolean).length;
+
+                      return (
+                        <div key={assignedTest.id} className="p-5 hover:bg-white/[0.01] transition">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-semibold text-white text-sm">{assignedTest.title}</h4>
+                                <span className="text-white/20">•</span>
+                                <span className="text-xs text-white/45">{assignedTest.questions.length} вопр.</span>
+                              </div>
+                              <p className="text-[10px] text-white/40">
+                                Добавлен: {assignedTest.assignedAt ? new Date(assignedTest.assignedAt).toLocaleDateString() : 'Неизвестно'}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              {isSubmitted ? (
+                                <div className="flex items-center gap-2.5 flex-wrap justify-end">
+                                  <span className="text-xs text-emerald-400 font-mono font-bold bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-xl">
+                                    Сдан • {assignedTest.score} / {assignedTest.totalQuestions || assignedTest.questions.length} (
+                                    {Math.round(((assignedTest.score || 0) / (assignedTest.totalQuestions || assignedTest.questions.length)) * 100)}%)
+                                  </span>
+                                  {discussCount > 0 && (
+                                    <span className="text-xs text-rose-300 font-bold bg-rose-500/15 border border-rose-500/30 px-2 py-1 rounded-xl flex items-center gap-1">
+                                      ❓ {discussCount} на разбор
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => setExpandedTestId(expandedTestId === assignedTest.id ? null : assignedTest.id)}
+                                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs px-3 py-1.5 rounded-xl transition cursor-pointer"
+                                  >
+                                    {expandedTestId === assignedTest.id ? 'Скрыть разбор' : 'Показать разбор'}
+                                  </button>
+                                </div>
+                              ) : isDraft ? (
+                                <span className="text-xs text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-xl">
+                                  Сохранен черновик ({Object.keys(assignedTest.answers || {}).length} отв.)
+                                </span>
+                              ) : (
+                                <span className="text-xs text-white/40 font-medium bg-white/5 border border-white/10 px-2.5 py-1.5 rounded-xl">
+                                  Ожидает решения
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Expanded Error/Question Review Table */}
+                          {isSubmitted && expandedTestId === assignedTest.id && (
+                            <div className="mt-5 border-t border-white/5 pt-5 space-y-4">
+                              <h5 className="text-xs font-bold text-[#F4B5CD] uppercase tracking-wider mb-2">Детальный анализ ответов</h5>
+                              <div className="grid grid-cols-1 gap-4">
+                                {assignedTest.questions.map((question, qIdx) => {
+                                  const studentAnswer = assignedTest.answers?.[question.id] || '';
+                                  const checkedResult = assignedTest.checkedResults?.[question.id];
+                                  const isCorrect = checkedResult?.isCorrect;
+                                  const wantsToDiscuss = assignedTest.wantToDiscuss?.[question.id];
+
+                                  return (
+                                    <div 
+                                      key={question.id} 
+                                      className={`p-4 rounded-xl border transition ${
+                                        isCorrect 
+                                          ? 'bg-emerald-500/[0.02] border-emerald-500/10' 
+                                          : 'bg-rose-500/[0.02] border-rose-500/10'
+                                      } ${wantsToDiscuss ? 'ring-1 ring-[#F4B5CD]/35 bg-[#F4B5CD]/[0.01]' : ''}`}
+                                    >
+                                      <div className="flex items-start justify-between gap-4">
+                                        <div className="space-y-1.5 flex-1">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-mono text-xs font-extrabold text-white/50">Задание №{qIdx + 1}</span>
+                                            {isCorrect ? (
+                                              <span className="text-[10px] uppercase font-bold text-emerald-400 font-mono flex items-center gap-1">
+                                                ✔️ Верно
+                                              </span>
+                                            ) : (
+                                              <span className="text-[10px] uppercase font-bold text-rose-400 font-mono flex items-center gap-1">
+                                                ❌ Ошибка
+                                              </span>
+                                            )}
+                                            {wantsToDiscuss && (
+                                              <span className="text-[10px] uppercase font-bold text-[#F4B5CD] font-mono bg-[#F4B5CD]/10 px-1.5 py-0.5 rounded-md border border-[#F4B5CD]/20 flex items-center gap-1">
+                                                ❓ Требуется разбор
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-white/85 leading-relaxed font-serif whitespace-pre-line">
+                                            {question.text}
+                                          </p>
+
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                                            <div className="p-2.5 bg-black/40 border border-white/5 rounded-lg">
+                                              <span className="text-[9px] uppercase tracking-wider text-white/40 block">Ответ ученика:</span>
+                                              <span className={`text-xs font-mono font-bold mt-1 block ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                {studentAnswer || '— (не ответил)'}
+                                              </span>
+                                            </div>
+                                            <div className="p-2.5 bg-black/40 border border-white/5 rounded-lg">
+                                              <span className="text-[9px] uppercase tracking-wider text-white/40 block">Правильный ответ:</span>
+                                              <span className="text-xs font-mono font-bold text-emerald-400 mt-1 block">
+                                                {question.correctAnswer}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,1096 +1,928 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { AssignedTest, TestQuestion, StudentCabinet } from '../types';
-import { decodeData, encodeData } from '../utils/codec';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Play, CheckCircle, Clock, AlertTriangle, ShieldAlert,
-  ArrowRight, ExternalLink, RefreshCw, Star, BarChart2,
-  Calendar, Check, X, MessageSquare, ChevronLeft, Award, Copy
+  Check, X, MessageCircle, Send, Copy, ChevronLeft, BookOpen, 
+  Award, TrendingUp, Calendar, List, Sparkles, Clock, Share2, HelpCircle 
 } from 'lucide-react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { StudentCabinet, AssignedTest, TestQuestion } from '../types';
+import { decodeData, toCompact, fromCompact, compressResult, CompactResult } from '../utils/codec';
 import { safeStorage } from '../utils/safeStorage';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface StudentCabinetViewProps {
   cabinetId?: string | null;
   cabinetData?: string | null;
-  cabinet?: StudentCabinet | null;
-  onSaveAnswers?: (updatedCabinet: StudentCabinet) => void;
 }
 
-export function StudentCabinetView({ cabinetId, cabinetData, cabinet: propCabinet, onSaveAnswers }: StudentCabinetViewProps) {
+export function StudentCabinetView({ cabinetId, cabinetData }: StudentCabinetViewProps) {
+  // State for loaded cabinet
   const [cabinet, setCabinet] = useState<StudentCabinet | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [resultCodeToCopy, setResultCodeToCopy] = useState<string | null>(null);
-  const [copiedResult, setCopiedResult] = useState(false);
-  
-  // Active test solving state
+
+  // Active test being taken
   const [activeTest, setActiveTest] = useState<AssignedTest | null>(null);
-  const [studentAnswers, setStudentAnswers] = useState<Record<string, any>>({});
-  const [wantToDiscuss, setWantToDiscuss] = useState<Record<string, boolean>>({});
-  
-  // Timer and tracking state
-  const [timeSpent, setTimeSpent] = useState(0);
-  const [tabSwitches, setTabSwitches] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submittingError, setSubmittingError] = useState<string | null>(null);
-  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+  // Answers being filled
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // Discuss flags
+  const [discussFlags, setDiscussFlags] = useState<Record<string, boolean>>({});
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Submission state
+  const [submittedResult, setSubmittedResult] = useState<{
+    score: number;
+    total: number;
+    code: string;
+    testTitle: string;
+    discussList: number[];
+  } | null>(null);
 
-  // Ensure body has dark theme class
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  // Tab state in cabinet
+  const [activeCabinetTab, setActiveCabinetTab] = useState<'tests' | 'progress'>('tests');
+
+  // Load cabinet data on mount with Firestore Realtime Sync
   useEffect(() => {
-    const bodyClass = document.body.classList;
-    bodyClass.add('theme-cosmic');
-    bodyClass.remove('theme-gothic');
-  }, []);
-
-  // Robust function to merge incoming assigned tests list with local browser submissions history
-  const mergeAssignedTests = (incomingTests: AssignedTest[] | undefined | null, cabId: string): AssignedTest[] => {
-    const safeTests = Array.isArray(incomingTests) ? incomingTests : [];
-    const localSubmittedMap: Record<string, AssignedTest> = {};
-
-    // 1. Recover from student_progress_${cabId}
     try {
-      const progressStr = safeStorage.getItem(`student_progress_${cabId}`);
-      if (progressStr) {
-        const savedTests = JSON.parse(progressStr) as AssignedTest[];
-        savedTests.forEach(t => {
-          if (t && t.id && t.status === 'submitted') {
-            localSubmittedMap[t.id] = t;
-          }
-        });
-      }
-    } catch (e) {
-      console.warn('Silent warning: failed to parse student_progress:', e);
-    }
-
-    // 2. Recover from student_cabinet_${cabId} to be 100% resilient
-    try {
-      const storedCabStr = safeStorage.getItem(`student_cabinet_${cabId}`);
-      if (storedCabStr) {
-        const storedCab = JSON.parse(storedCabStr) as StudentCabinet;
-        if (storedCab && Array.isArray(storedCab.assignedTests)) {
-          storedCab.assignedTests.forEach(t => {
-            if (t && t.id && t.status === 'submitted') {
-              localSubmittedMap[t.id] = t;
-            }
-          });
+      if (cabinetData) {
+        // Load from URL data
+        const decoded = decodeData(cabinetData);
+        if (decoded) {
+          const loadedCabinet = decoded.i ? fromCompact(decoded) : (decoded as StudentCabinet);
+          setCabinet(loadedCabinet);
+          // Cache in localStorage so student doesn't lose it on reload
+          safeStorage.setItem(`student_cached_cabinet_${loadedCabinet.id}`, JSON.stringify(loadedCabinet));
+          safeStorage.setItem('last_viewed_student_cabinet_id', loadedCabinet.id);
+        } else {
+          throw new Error('Не удалось декодировать данные кабинета');
         }
-      }
-    } catch (e) {
-      console.warn('Silent warning: failed to parse student_cabinet local backup:', e);
-    }
+      } else if (cabinetId) {
+        // Try loading from localStorage cache first (offline-first, super snappy)
+        const stored = safeStorage.getItem(`student_cached_cabinet_${cabinetId}`);
+        if (stored) {
+          try {
+            setCabinet(JSON.parse(stored));
+          } catch (e) {
+            console.error(e);
+          }
+        }
 
-    // 3. Merge: if a test has been completed locally, preserve its answers & scores
-    return safeTests.map(test => {
-      const localCompleted = localSubmittedMap[test.id];
-      if (localCompleted) {
-        return { ...test, ...localCompleted };
+        // Connect real-time subscription to cloud document
+        const docRef = doc(db, 'cabinets', cabinetId);
+        const unsubscribe = onSnapshot(docRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const cloudCabinet = snapshot.data() as StudentCabinet;
+            setCabinet(cloudCabinet);
+            safeStorage.setItem(`student_cached_cabinet_${cabinetId}`, JSON.stringify(cloudCabinet));
+            safeStorage.setItem('last_viewed_student_cabinet_id', cabinetId);
+          } else {
+            if (!stored) {
+              setError('Кабинет не найден на сервере. Возможно, репетитор удалил его.');
+            }
+          }
+        }, (err) => {
+          console.error('Firestore subscription error:', err);
+        });
+
+        return () => unsubscribe();
+      } else {
+        // Fallback to last viewed cabinet
+        const lastId = safeStorage.getItem('last_viewed_student_cabinet_id');
+        if (lastId) {
+          const stored = safeStorage.getItem(`student_cached_cabinet_${lastId}`);
+          if (stored) {
+            try {
+              setCabinet(JSON.parse(stored));
+              return;
+            } catch (e) {
+              console.error(e);
+            }
+          }
+        }
+        setError('Ссылка пуста или недействительна. Попросите репетитора отправить вам прямую ссылку на кабинет.');
       }
-      return test;
+    } catch (err: any) {
+      console.error(err);
+      setError('Ошибка при загрузке кабинета. Убедитесь, что ссылка скопирована полностью.');
+    }
+  }, [cabinetId, cabinetData]);
+
+  // Handle selecting a test to solve
+  const handleStartTest = (test: AssignedTest) => {
+    if (test.status === 'submitted') return;
+    setActiveTest(test);
+    setAnswers(test.answers || {});
+    setDiscussFlags(test.wantToDiscuss || {});
+    setSubmittedResult(null);
+  };
+
+  // Toggle discussion flag
+  const toggleDiscuss = (qId: string) => {
+    setDiscussFlags(prev => ({
+      ...prev,
+      [qId]: !prev[qId]
+    }));
+  };
+
+  // Submit test and perform autocheck
+  const handleSubmitTest = () => {
+    if (!activeTest || !cabinet) return;
+
+    let correctCount = 0;
+    const checked: Record<string, boolean> = {};
+
+    activeTest.questions.forEach((q) => {
+      const studentAnswer = (answers[q.id] || '').trim().toLowerCase();
+      const correctAnswer = (q.correctAnswer || '').trim().toLowerCase();
+      const isCorrect = studentAnswer === correctAnswer;
+      if (isCorrect) {
+        correctCount++;
+      }
+      checked[q.id] = isCorrect;
+    });
+
+    const submittedAtStr = new Date().toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // Update test instance
+    const updatedTest: AssignedTest = {
+      ...activeTest,
+      status: 'submitted',
+      submittedAt: submittedAtStr,
+      answers,
+      wantToDiscuss: discussFlags,
+      score: correctCount,
+      totalQuestions: activeTest.questions.length,
+      checkedResults: checked
+    };
+
+    // Update cabinet list
+    const updatedTests = cabinet.assignedTests.map(t => t.id === activeTest.id ? updatedTest : t);
+    const updatedCabinet: StudentCabinet = {
+      ...cabinet,
+      assignedTests: updatedTests
+    };
+
+    // Save to state and localStorage
+    setCabinet(updatedCabinet);
+    safeStorage.setItem(`student_cached_cabinet_${cabinet.id}`, JSON.stringify(updatedCabinet));
+
+    // Real-time Cloud Sync (requires zero registration or steps from student)
+    const docRef = doc(db, 'cabinets', cabinet.id);
+    setDoc(docRef, updatedCabinet, { merge: true })
+      .then(() => {
+        console.log('Cabinet results auto-saved to cloud successfully!');
+      })
+      .catch((err) => {
+        console.error('Failed to auto-save results to cloud:', err);
+      });
+
+    // Generate compressed response code
+    const compactResult: CompactResult = {
+      i: cabinet.id,
+      t: activeTest.id,
+      a: answers,
+      d: discussFlags,
+      r: correctCount,
+      u: submittedAtStr
+    };
+
+    const resultString = compressResult(compactResult);
+
+    // List of question indices student wants to discuss
+    const discussIndices: number[] = [];
+    activeTest.questions.forEach((q, idx) => {
+      if (discussFlags[q.id]) {
+        discussIndices.push(idx + 1);
+      }
+    });
+
+    setSubmittedResult({
+      score: correctCount,
+      total: activeTest.questions.length,
+      code: resultString,
+      testTitle: activeTest.title,
+      discussList: discussIndices
     });
   };
 
-  // 1. Fetch or decode cabinet data
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
+  // Copy result code
+  const handleCopyCode = () => {
+    if (!submittedResult) return;
+    navigator.clipboard.writeText(submittedResult.code).then(() => {
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    });
+  };
 
-    if (propCabinet) {
-      // Tutor preview mode
-      const safeCabinet = {
-        ...propCabinet,
-        assignedTests: Array.isArray(propCabinet.assignedTests) ? propCabinet.assignedTests : []
-      };
-      setCabinet(safeCabinet);
-      setLoading(false);
-      return;
+  // Generate messenger text
+  const getShareText = () => {
+    if (!submittedResult || !cabinet) return '';
+    const name = cabinet.studentName;
+    const percent = Math.round((submittedResult.score / submittedResult.total) * 100);
+    let msg = `🎓 Ученик ${name} сдал тест "${submittedResult.testTitle}"\n`;
+    msg += `📊 Результат: ${submittedResult.score} из ${submittedResult.total} (${percent}%)\n`;
+    if (submittedResult.discussList.length > 0) {
+      msg += `❓ Вопросы на обсуждение: ${submittedResult.discussList.join(', ')}\n`;
     }
+    msg += `🔑 Код ответа (вставьте в приложении репетитора):\n${submittedResult.code}`;
+    return encodeURIComponent(msg);
+  };
 
-    let decodedCab: StudentCabinet | null = null;
+  // Completed tests list for graph & matrix
+  const completedTests = useMemo(() => {
+    if (!cabinet) return [];
+    return (cabinet.assignedTests || []).filter(t => t.status === 'submitted');
+  }, [cabinet]);
 
-    if (cabinetData) {
-      // URLSearchParams replaces '+' with ' ' (space) when parsing. We must restore '+' characters!
-      const cleanCabinetData = cabinetData.replace(/ /g, '+');
-      decodedCab = decodeData(cleanCabinetData) as StudentCabinet;
-    }
+  // Max number of questions across completed tests (for error matrix sizing)
+  const maxQuestionCount = useMemo(() => {
+    if (completedTests.length === 0) return 0;
+    return Math.max(...completedTests.map(t => t.questions.length));
+  }, [completedTests]);
 
-    if (!decodedCab && cabinetId) {
-      // Fetch directly from Firestore so links can be short!
-      getDoc(doc(db, 'cabinets', cabinetId)).then((snap) => {
-        if (snap.exists()) {
-          let fetchedCab = snap.data() as StudentCabinet;
-          
-          // Merge with student's local submissions progress to preserve completed tests
-          fetchedCab.assignedTests = mergeAssignedTests(fetchedCab.assignedTests, cabinetId);
-          
-          setCabinet(fetchedCab);
-          safeStorage.setItem(`student_cabinet_${cabinetId}`, JSON.stringify(fetchedCab));
-        } else {
-          // Fallback to local storage if offline or not found
-          const stored = safeStorage.getItem(`student_cabinet_${cabinetId}`);
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored) as StudentCabinet;
-              parsed.assignedTests = mergeAssignedTests(parsed.assignedTests, cabinetId);
-              setCabinet(parsed);
-            } catch (e) {
-              setError('Кабинет не найден в системе. Обратитесь к преподавателю за ссылкой.');
-            }
-          } else {
-            setError('Кабинет не найден в системе. Пожалуйста, обратитесь к вашему преподавателю за актуальной ссылкой.');
-          }
-        }
-        setLoading(false);
-      }).catch((err) => {
-        console.error('Error fetching cabinet:', err);
-        // Fallback to local storage on error
-        const stored = safeStorage.getItem(`student_cabinet_${cabinetId}`);
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored) as StudentCabinet;
-            parsed.assignedTests = mergeAssignedTests(parsed.assignedTests, cabinetId);
-            setCabinet(parsed);
-          } catch (e) {
-            setError('Ошибка подключения к базе данных.');
-          }
-        } else {
-          setError('Ошибка загрузки кабинета. Проверьте подключение к интернету.');
-        }
-        setLoading(false);
-      });
-      return;
-    }
-
-    if (decodedCab) {
-      // Merge with student's local submissions progress to preserve completed tests
-      decodedCab.assignedTests = mergeAssignedTests(decodedCab.assignedTests, decodedCab.id);
-      setCabinet(decodedCab);
-      // Save original/decoded cabinet structure locally as fallback
-      safeStorage.setItem(`student_cabinet_${decodedCab.id}`, JSON.stringify(decodedCab));
-    } else {
-      setError('Кабинет не найден или указана неверная ссылка. Пожалуйста, убедитесь, что вы скопировали ссылку полностью.');
-    }
-    setLoading(false);
-  }, [cabinetId, cabinetData, propCabinet]);
-
-  // 2. Track Page Blur (tab switches) and Timer when a test is being solved
-  useEffect(() => {
-    if (!activeTest) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      return;
-    }
-
-    // Reset timer and switches
-    setTimeSpent(0);
-    setTabSwitches(0);
-
-    // Timer interval
-    timerRef.current = setInterval(() => {
-      setTimeSpent(prev => prev + 1);
-    }, 1000);
-
-    // Visibility change and blur listeners
-    const handleBlur = () => {
-      setTabSwitches(prev => prev + 1);
-    };
-
-    window.addEventListener('blur', handleBlur);
-    
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        setTabSwitches(prev => prev + 1);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      window.removeEventListener('blur', handleBlur);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [activeTest]);
-
-  if (loading) {
+  if (error) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-white text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-2 border-purple-500/20 border-t-purple-500 mb-4"></div>
-        <p className="text-sm font-medium text-white/60 font-sans">Загрузка вашего кабинета...</p>
-      </div>
-    );
-  }
-
-  if (error || !cabinet) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-white text-center">
-        <div className="w-16 h-16 rounded-3xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 mb-4 animate-pulse">
-          <ShieldAlert className="w-8 h-8" />
+      <div className="min-h-screen bg-[#0C0D12] text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mb-6">
+          <X className="w-8 h-8 text-red-400" />
         </div>
-        <h2 className="text-lg font-bold text-white mb-2 font-sans">Доступ ограничен</h2>
-        <p className="text-xs text-white/60 max-w-md mb-6 leading-relaxed font-sans">
-          {error || 'Указана неверная или устаревшая ссылка.'}
+        <h1 className="text-xl font-bold font-sans text-red-200">Личный кабинет не доступен</h1>
+        <p className="text-sm text-white/50 max-w-md mt-2 font-sans">
+          {error}
         </p>
-        
-        <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-5 max-w-md text-left text-xs text-amber-200/80 mb-6 space-y-2 font-sans">
-          <p className="font-bold text-amber-400">💡 Как решить эту проблему:</p>
-          <ul className="list-disc pl-4 space-y-1.5 font-medium">
-            <li>Убедитесь, что вы перешли по полной ссылке, предоставленной вашим преподавателем.</li>
-            <li>Если в ссылке есть часть <b>cabinet_data=...</b>, возможно, ссылка была урезана вашим мессенджером (Telegram, WhatsApp и др.) из-за большого объёма. Попросите преподавателя отправить короткую облачную ссылку.</li>
-          </ul>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-          <button 
-            onClick={() => window.location.reload()}
-            className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md transition duration-150 flex items-center gap-1.5 border-none cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
-            Проверить снова
-          </button>
-        </div>
       </div>
     );
   }
 
-  // Auto-checking helper function for short answers
-  function checkShortAnswer(studentAns: string, correctAnswersStr: string): boolean {
-    if (!studentAns || !correctAnswersStr) return false;
-    const cleanStudent = studentAns.trim().toLowerCase();
-    const options = correctAnswersStr.split('/').map(opt => opt.trim().toLowerCase());
-    
-    for (const opt of options) {
-      if (cleanStudent === opt) return true;
-      
-      // Order-insensitive comparison for alphanumeric codes (e.g. "1234" vs "4321")
-      const optSorted = opt.split('').sort().join('');
-      const studSorted = cleanStudent.split('').sort().join('');
-      if (optSorted === studSorted && optSorted.length > 0) return true;
-    }
-    return false;
+  if (!cabinet) {
+    return (
+      <div className="min-h-screen bg-[#0C0D12] text-white flex flex-col items-center justify-center p-6">
+        <div className="w-12 h-12 border-4 border-[#F4B5CD]/20 border-t-[#F4B5CD] rounded-full animate-spin"></div>
+        <p className="text-sm text-white/50 mt-4 font-mono">Загрузка личного кабинета...</p>
+      </div>
+    );
   }
 
-  // Autosave draft answers
-  useEffect(() => {
-    if (activeTest && cabinet) {
-      const draftKey = `student_draft_${cabinet.id}_${activeTest.id}`;
-      const draftData = {
-        answers: studentAnswers,
-        wantToDiscuss,
-        timeSpent,
-        tabSwitches
-      };
-      safeStorage.setItem(draftKey, JSON.stringify(draftData));
-    }
-  }, [studentAnswers, wantToDiscuss, timeSpent, tabSwitches, activeTest, cabinet]);
-
-  // Handle Test Start
-  const handleStartTest = (test: AssignedTest) => {
-    setActiveTest(test);
-    
-    // Attempt to restore draft
-    const draftKey = `student_draft_${cabinet?.id}_${test.id}`;
-    const storedDraft = safeStorage.getItem(draftKey);
-    if (storedDraft) {
-      try {
-        const parsed = JSON.parse(storedDraft);
-        setStudentAnswers(parsed.answers || {});
-        setWantToDiscuss(parsed.wantToDiscuss || {});
-        setTimeSpent(parsed.timeSpent || 0);
-        setTabSwitches(parsed.tabSwitches || 0);
-        return;
-      } catch (e) {
-        console.error('Error loading draft:', e);
-      }
-    }
-    
-    setStudentAnswers({});
-    setWantToDiscuss({});
-    setTimeSpent(0);
-    setTabSwitches(0);
-  };
-
-  // Answer handler
-  const handleSetAnswer = (questionId: string, value: any) => {
-    setStudentAnswers(prev => ({
-      ...prev,
-      [questionId]: value
-    }));
-  };
-
-  // Want to discuss toggle handler
-  const handleToggleDiscuss = (questionId: string) => {
-    setWantToDiscuss(prev => ({
-      ...prev,
-      [questionId]: !prev[questionId]
-    }));
-  };
-
-  // Submit Test logic
-  const handleSubmitTest = async () => {
-    if (!activeTest || !cabinet) return;
-    setIsSubmitting(true);
-    setSubmittingError(null);
-
-    try {
-      let score = 0;
-      const checkedResults: Record<string, boolean> = {};
-
-      activeTest.questions.forEach((q) => {
-        const studentAns = studentAnswers[q.id];
-        let isCorrect = false;
-
-        if (q.type === 'short') {
-          isCorrect = checkShortAnswer(studentAns || '', q.correctAnswer || '');
-        } else if (q.type === 'single') {
-          // Compare index of selected option
-          if (studentAns !== undefined && q.correctOptions) {
-            isCorrect = !!q.correctOptions[studentAns];
-          }
-        } else if (q.type === 'multiple') {
-          // Check if student's boolean array matches true indices
-          const studentArr = studentAns || [];
-          isCorrect = (q.correctOptions || []).every((val, idx) => {
-            return !!studentArr[idx] === !!val;
-          });
-        } else if (q.type === 'matching') {
-          // Check mapping left index -> right index
-          const studentMapping = studentAns || {};
-          isCorrect = (q.matchingAnswers || []).every((val, idx) => {
-            return studentMapping[idx] === val;
-          });
-        }
-
-        checkedResults[q.id] = isCorrect;
-        if (isCorrect) score++;
-      });
-
-      const safeAssigned = Array.isArray(cabinet.assignedTests) ? cabinet.assignedTests : [];
-      const updatedAssignedTests = safeAssigned.map(test => {
-        if (test.id === activeTest.id) {
-          return {
-            ...test,
-            status: 'submitted' as const,
-            submittedAt: new Date().toISOString(),
-            timeSpent,
-            tabSwitches,
-            answers: studentAnswers,
-            wantToDiscuss,
-            score,
-            totalQuestions: test.questions.length,
-            checkedResults
-          };
-        }
-        return test;
-      });
-
-      const updatedCabinet: StudentCabinet = {
-        ...cabinet,
-        assignedTests: updatedAssignedTests
-      };
-
-      // 1. If in tutor preview mode, trigger the onSaveAnswers callback
-      if (onSaveAnswers) {
-        onSaveAnswers(updatedCabinet);
-      }
-
-      // Save directly to public Firestore collection for real-time teacher updates (non-blocking)
-      setDoc(doc(db, 'cabinets', cabinet.id), updatedCabinet).catch(err => {
-        console.warn('Silent warning: Failed to sync student answers to Firestore in background:', err);
-      });
-
-      // 2. Update local state
-      setCabinet(updatedCabinet);
-
-      // 3. Save student progress locally in their browser so it persists across reloads
-      const progressKey = `student_progress_${cabinet.id}`;
-      safeStorage.setItem(progressKey, JSON.stringify(updatedAssignedTests));
-      safeStorage.setItem(`student_cabinet_${cabinet.id}`, JSON.stringify(updatedCabinet));
-      
-      // Clear draft answers as the test is successfully submitted
-      safeStorage.removeItem(`student_draft_${cabinet.id}_${activeTest.id}`);
-
-      // 4. Generate result code for the student to send to their teacher
-      const resultPayload = {
-        cabinetId: cabinet.id,
-        studentId: cabinet.studentId,
-        testId: activeTest.id,
-        score,
-        totalQuestions: activeTest.questions.length,
-        submittedAt: new Date().toISOString(),
-        timeSpent,
-        tabSwitches,
-        answers: studentAnswers,
-        wantToDiscuss,
-        checkedResults
-      };
-
-      const encodedResult = encodeData(resultPayload);
-      const formattedResultCode = `[РЕЗУЛЬТАТ-ТЕСТА] ${cabinet.studentName} | ${activeTest.title} | Оценка: ${score}/${activeTest.questions.length} | Код: ${encodedResult}`;
-      setResultCodeToCopy(formattedResultCode);
-
-      setActiveTest(null);
-      setShowConfirmSubmit(false);
-    } catch (err: any) {
-      console.error('Error submitting test:', err);
-      setSubmittingError('Не удалось сохранить результаты. Пожалуйста, попробуйте снова.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Format seconds to MM:SS or HH:MM:SS
-  const formatTime = (seconds: number) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hrs > 0) {
-      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Safe Date Formatter to prevent RangeError runtime crashes
-  const safeFormatDate = (dateStr: string | undefined | null, options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }): string => {
-    if (!dateStr) return 'Сегодня';
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return '---';
-      return d.toLocaleDateString('ru-RU', options);
-    } catch (e) {
-      console.warn('Failed to parse date:', dateStr, e);
-      return '---';
-    }
-  };
-
-  const safeAssignedTests = Array.isArray(cabinet.assignedTests) ? cabinet.assignedTests : [];
-  const completedTests = safeAssignedTests.filter(t => t.status === 'submitted');
-  const pendingTests = safeAssignedTests.filter(t => t.status === 'pending');
-
-  // Chart data preprocessor
-  const chartPoints = completedTests
-    .map(t => {
-      const percentage = t.totalQuestions ? Math.round((t.score || 0) / t.totalQuestions * 100) : 0;
-      return {
-        title: t.title,
-        percentage,
-        date: safeFormatDate(t.submittedAt, { day: 'numeric', month: 'short' })
-      };
-    })
-    .slice(-10); // last 10 tests
-
-  // Max questions in any test to dynamically set grid columns in the summary table
-  const maxQuestionsCount = Math.max(...safeAssignedTests.map(t => (t.questions || []).length), 0);
-
-  return (
-    <div className="min-h-screen text-white/90 font-sans selection:bg-purple-500/30 selection:text-white pb-12">
-      {/* Dynamic Cosmic Theme Header */}
-      <header className="bg-[#12131a]/80 backdrop-blur-md border-b border-white/10 py-5 px-6 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-xl shadow-xs border border-white/10">
-              🎓
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-white leading-tight">Кабинет ученика</h1>
-              <p className="text-xs text-white/50 font-medium">Привет, {cabinet.studentName}! Рады видеть тебя 👋</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 bg-white/5 text-[#C3B4FC] text-[10px] font-mono tracking-wider uppercase font-bold px-3 py-1.5 rounded-lg border border-white/10">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Статус: Активен</span>
-          </div>
-        </div>
-      </header>
-
-      {cabinetData && (
-        <div className="bg-purple-500/10 border-b border-purple-500/20 py-3 px-6 shadow-xs animate-fade-in">
-          <div className="max-w-6xl mx-auto flex items-start sm:items-center gap-3 text-xs text-purple-200 font-sans font-medium">
-            <Award className="w-5 h-5 text-purple-400 shrink-0 mt-0.5 sm:mt-0" />
-            <div>
-              <span className="font-bold text-purple-300">⚡ Автономный режим активен:</span>{' '}
-              Этот кабинет работает без баз данных и не требует VPN. Твои ответы сохраняются локально в твоем браузере. В конце теста ты получишь специальный короткий текстовый код, который нужно отправить преподавателю.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Container */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-8">
-        {activeTest ? (
-          /* Active Test Solver Interface */
-          <div className="max-w-3xl mx-auto">
-            {/* Header / Info bar */}
-            <div className="bg-[#12131a]/80 border border-white/10 rounded-2xl p-5 mb-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-[#C3B4FC] uppercase tracking-widest block font-mono">
-                  {activeTest.type === 'OGE' ? 'Подготовка к ОГЭ' : 'Подготовка к ЕГЭ'}
-                </span>
-                <h2 className="text-lg font-bold text-white">{activeTest.title}</h2>
-              </div>
-              
-              <div className="flex items-center gap-4">
-                {/* Timer Display */}
-                <div className="flex items-center gap-2 bg-purple-500/10 text-purple-200 px-4 py-2 rounded-xl border border-purple-500/20 shadow-xs">
-                  <Clock className="w-4 h-4 text-[#C3B4FC] animate-pulse" />
-                  <span className="font-mono font-bold text-sm select-none">{formatTime(timeSpent)}</span>
-                </div>
+  // Active Test-Taking Panel
+  if (activeTest) {
+    return (
+      <div className="min-h-screen bg-[#0C0D12] text-white/95 pb-20">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-[#0C0D12]/90 backdrop-blur-md border-b border-white/5 px-4 sm:px-6 py-4 flex items-center justify-between">
+          <button
+            onClick={() => {
+              if (window.confirm('Вы уверены, что хотите выйти из теста? Ваши ответы будут сохранены, но тест не будет сдан.')) {
+                // Save answers to draft
+                const draftTest: AssignedTest = {
+                  ...activeTest,
+                  answers,
+                  wantToDiscuss: discussFlags
+                };
+                const updated = cabinet.assignedTests.map(t => t.id === activeTest.id ? draftTest : t);
+                const updatedCab = { ...cabinet, assignedTests: updated };
+                setCabinet(updatedCab);
+                safeStorage.setItem(`student_cached_cabinet_${cabinet.id}`, JSON.stringify(updatedCab));
                 
-                {/* Blur warning indicator */}
-                {tabSwitches > 0 && (
-                  <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-200 px-3 py-2 rounded-xl border border-amber-500/20 text-xs font-semibold">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Сворачиваний: {tabSwitches}</span>
-                  </div>
-                )}
+                // Auto-save draft to cloud
+                const docRef = doc(db, 'cabinets', cabinet.id);
+                setDoc(docRef, updatedCab, { merge: true })
+                  .catch((err) => console.error('Failed to auto-save draft to cloud:', err));
+
+                setActiveTest(null);
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 transition text-xs font-bold uppercase tracking-wider font-mono cursor-pointer border border-white/5"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            В кабинет
+          </button>
+          
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] uppercase tracking-wider text-[#F4B5CD] font-bold">Выполняется тест</span>
+            <span className="text-sm font-semibold truncate max-w-[180px] sm:max-w-xs">{activeTest.title}</span>
+          </div>
+        </div>
+
+        {/* Test Submission Success View */}
+        {submittedResult ? (
+          <div className="max-w-2xl mx-auto px-4 py-12 animate-fadeIn text-center">
+            <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Check className="w-8 h-8 text-emerald-400" />
+            </div>
+            
+            <h1 className="text-2xl font-bold font-sans text-emerald-300">Тест успешно сдан!</h1>
+            
+            <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-4 my-6 text-left max-w-sm mx-auto flex items-start gap-3">
+              <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-emerald-200 uppercase tracking-wider">Синхронизация с репетитором</h4>
+                <p className="text-[11px] text-emerald-400/80 leading-relaxed mt-0.5">
+                  Ваши ответы сохранены в облаке и уже отправлены вашему преподавателю. От вас ничего более не требуется!
+                </p>
               </div>
             </div>
 
-            {/* Questions List */}
-            <div className="space-y-6 mb-8">
-              {activeTest.questions.map((q, idx) => {
-                const answer = studentAnswers[q.id];
-                const discuss = !!wantToDiscuss[q.id];
+            <p className="text-white/40 text-xs mt-2 max-w-md mx-auto">
+              Если преподаватель работает офлайн, вы можете переслать ему код ответа вручную:
+            </p>
+
+            {/* Score Showcase */}
+            <div className="bg-gradient-to-br from-emerald-500/5 to-white/5 border border-emerald-500/20 p-6 rounded-2xl my-8 max-w-sm mx-auto">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-400 font-mono">Ваш результат</span>
+              <div className="text-4xl font-extrabold mt-2 text-white font-sans">
+                {submittedResult.score} <span className="text-white/30 text-2xl">/ {submittedResult.total}</span>
+              </div>
+              <div className="text-xs text-white/50 mt-1">
+                Точность: {Math.round((submittedResult.score / submittedResult.total) * 100)}%
+              </div>
+            </div>
+
+            {/* Code Copy block */}
+            <div className="bg-[#12131C] border border-white/5 p-5 rounded-2xl text-left max-w-md mx-auto mb-8">
+              <span className="text-[9px] uppercase tracking-wider font-bold text-[#F4B5CD] font-mono block mb-2">
+                Код результатов для репетитора
+              </span>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={submittedResult.code}
+                  className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white/70 flex-1 outline-none"
+                />
+                <button
+                  onClick={handleCopyCode}
+                  className={`px-4 rounded-xl text-xs font-bold uppercase tracking-wider transition font-mono cursor-pointer flex items-center justify-center gap-1.5 ${
+                    copiedCode 
+                      ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300'
+                      : 'bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD]'
+                  }`}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  {copiedCode ? 'Сделано!' : 'Копировать'}
+                </button>
+              </div>
+            </div>
+
+            {/* Send Options */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center max-w-md mx-auto">
+              <a
+                href={`https://t.me/share/url?url=&text=${getShareText()}`}
+                target="_blank"
+                rel="noreferrer"
+                className="py-3 px-5 rounded-xl bg-[#229ED9]/15 hover:bg-[#229ED9]/25 border border-[#229ED9]/30 text-[#229ED9] text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                В Telegram
+              </a>
+              <a
+                href={`https://api.whatsapp.com/send?text=${getShareText()}`}
+                target="_blank"
+                rel="noreferrer"
+                className="py-3 px-5 rounded-xl bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/30 text-[#25D366] text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2"
+              >
+                <MessageCircle className="w-4 h-4" />
+                В WhatsApp
+              </a>
+              <button
+                onClick={() => {
+                  setActiveTest(null);
+                  setSubmittedResult(null);
+                }}
+                className="py-3 px-5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+              >
+                Вернуться в кабинет
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-3xl mx-auto px-4 py-8 animate-fadeIn">
+            {/* Question List */}
+            <div className="space-y-6">
+              {activeTest.questions.map((q, index) => {
+                const isSelected = (val: string) => answers[q.id] === val;
+                const isDiscussed = !!discussFlags[q.id];
 
                 return (
-                  <div key={q.id} className="bg-[#12131a]/80 border border-white/5 hover:border-white/10 rounded-2xl p-6 shadow-xs transition duration-200 relative group">
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-4 border-b border-white/5 pb-3 mb-4">
-                      <div>
-                        <span className="text-xs font-bold text-white/30 font-mono block">Задание {idx + 1}</span>
-                        <h3 className="text-sm font-semibold text-white/90 mt-0.5">{q.text}</h3>
+                  <div 
+                    key={q.id}
+                    className={`bg-gradient-to-b from-white/[0.03] to-white/[0.01] border p-6 rounded-2xl transition duration-300 relative group ${
+                      isDiscussed ? 'border-[#F4B5CD]/30 shadow-lg shadow-[#F4B5CD]/5' : 'border-white/5'
+                    }`}
+                  >
+                    {/* Header line */}
+                    <div className="flex items-center justify-between mb-4 gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-white/5 px-2.5 py-1 rounded-xl text-[10px] font-bold text-white/70 font-mono uppercase tracking-wider">
+                          Задание {index + 1}
+                        </span>
+                        <span className="text-[10px] text-white/30 font-mono uppercase">
+                          {q.type === 'single' ? 'Один вариант' : 'Краткий ответ'}
+                        </span>
                       </div>
                       
-                      {/* Discuss Flag Toggle */}
+                      {/* Discuss button */}
                       <button
-                        onClick={() => handleToggleDiscuss(q.id)}
-                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition cursor-pointer ${
-                          discuss
-                            ? 'bg-amber-500/15 border-amber-500/25 text-amber-200 shadow-xs'
-                            : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'
+                        type="button"
+                        onClick={() => toggleDiscuss(q.id)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[9px] uppercase font-bold tracking-wider font-mono transition cursor-pointer border ${
+                          isDiscussed 
+                            ? 'bg-[#F4B5CD]/20 border-[#F4B5CD]/35 text-[#F4B5CD]' 
+                            : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70 hover:bg-white/10'
                         }`}
-                        title="Нажми, если сомневаешься и хочешь обсудить этот вопрос с учителем"
+                        title="Хочу подробно обсудить это задание на уроке с репетитором"
                       >
-                        <MessageSquare className={`w-3.5 h-3.5 ${discuss ? 'text-amber-500 fill-amber-500/10' : ''}`} />
-                        <span>{discuss ? 'Хочу обсудить' : 'Сомневаюсь'}</span>
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        <span>Хочу обсудить</span>
                       </button>
                     </div>
 
-                    {/* Question Input Form Controls */}
-                    <div className="mt-2">
-                      {q.type === 'short' && (
-                        <div>
-                          <label className="text-xs text-white/40 font-medium block mb-2">Введите ваш ответ:</label>
-                          <input
-                            type="text"
-                            value={answer || ''}
-                            onChange={(e) => handleSetAnswer(q.id, e.target.value)}
-                            placeholder="Ответ (символы, цифры или слово)..."
-                            className="w-full px-4 py-3 bg-white/5 border border-white/10 focus:border-[#C3B4FC]/50 focus:bg-white/10 rounded-xl text-white text-sm font-medium transition duration-200 outline-none placeholder:text-white/20"
-                          />
-                        </div>
-                      )}
+                    {/* Question text */}
+                    <p className="text-sm font-sans text-white/90 leading-relaxed mb-6 font-medium">
+                      {q.text}
+                    </p>
 
-                      {q.type === 'single' && (
-                        <div className="space-y-2">
-                          <span className="text-xs text-white/40 font-medium block mb-1">Выберите один вариант:</span>
-                          {q.options?.map((opt, oIdx) => (
-                            <label
-                              key={oIdx}
-                              className={`flex items-center gap-3 px-4 py-3 border rounded-xl cursor-pointer transition duration-150 ${
-                                answer === oIdx
-                                  ? 'bg-purple-500/15 border-[#C3B4FC]/30 text-[#C3B4FC] shadow-xs'
-                                  : 'bg-white/5 border-white/10 hover:border-white/20 text-white/70'
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name={`q-${q.id}`}
-                                checked={answer === oIdx}
-                                onChange={() => handleSetAnswer(q.id, oIdx)}
-                                className="w-4 h-4 text-[#C3B4FC] focus:ring-[#C3B4FC] bg-white/5 border-white/10"
-                              />
-                              <span className="text-xs font-medium">{opt}</span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-
-                      {q.type === 'multiple' && (
-                        <div className="space-y-2">
-                          <span className="text-xs text-white/40 font-medium block mb-1">Выберите несколько вариантов:</span>
-                          {q.options?.map((opt, oIdx) => {
-                            const currentList = answer || [];
-                            const isChecked = !!currentList[oIdx];
-                            
-                            const handleChange = () => {
-                              const newList = [...currentList];
-                              newList[oIdx] = !isChecked;
-                              handleSetAnswer(q.id, newList);
-                            };
-
-                            return (
-                              <label
-                                key={oIdx}
-                                className={`flex items-center gap-3 px-4 py-3 border rounded-xl cursor-pointer transition duration-150 ${
-                                  isChecked
-                                    ? 'bg-purple-500/15 border-[#C3B4FC]/30 text-[#C3B4FC] shadow-xs'
-                                    : 'bg-white/5 border-white/10 hover:border-white/20 text-white/70'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={handleChange}
-                                  className="w-4 h-4 rounded text-[#C3B4FC] focus:ring-[#C3B4FC] bg-white/5 border-white/10"
-                                />
-                                <span className="text-xs font-medium">{opt}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {q.type === 'matching' && (
-                        <div className="space-y-4">
-                          <span className="text-xs text-white/40 font-medium block mb-1">Сопоставьте строки слева с вариантами справа:</span>
-                          
-                          {/* List of left statements */}
-                          <div className="space-y-3">
-                            {q.matchingLeft?.map((leftStr, lIdx) => {
-                              const currentMapping = answer || {};
-                              const selectedRightIdx = currentMapping[lIdx];
-
-                              return (
-                                <div key={lIdx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3.5">
-                                  <div className="flex-1 text-xs font-medium text-white/70">
-                                    {leftStr}
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="text-xs text-white/30 font-mono">→</span>
-                                    <select
-                                      value={selectedRightIdx !== undefined ? selectedRightIdx : ''}
-                                      onChange={(e) => {
-                                        const val = e.target.value === '' ? undefined : parseInt(e.target.value);
-                                        const newMapping = { ...currentMapping, [lIdx]: val };
-                                        handleSetAnswer(q.id, newMapping);
-                                      }}
-                                      className="bg-[#12131a] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 focus:border-[#C3B4FC] outline-none font-medium shadow-xs max-w-[200px]"
-                                    >
-                                      <option value="">-- Выбрать --</option>
-                                      {q.matchingRight?.map((rightStr, rIdx) => (
-                                        <option key={rIdx} value={rIdx} className="bg-[#12131a] text-white">
-                                          {rightStr}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    {/* Input controls based on type */}
+                    {q.type === 'single' && q.options ? (
+                      <div className="space-y-2.5">
+                        {q.options.map((opt, optIdx) => (
+                          <label
+                            key={optIdx}
+                            className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all duration-200 cursor-pointer text-xs select-none ${
+                              isSelected(String(optIdx))
+                                ? 'bg-[#F4B5CD]/10 border-[#F4B5CD]/35 text-white'
+                                : 'bg-white/[0.01] border-white/5 hover:border-white/10 hover:bg-white/[0.02] text-white/70'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`question_${q.id}`}
+                              checked={isSelected(String(optIdx))}
+                              onChange={() => setAnswers(prev => ({ ...prev, [q.id]: String(optIdx) }))}
+                              className="sr-only"
+                            />
+                            {/* Visual Radio mark */}
+                            <div className={`w-4 h-4 rounded-full border shrink-0 mt-0.5 flex items-center justify-center transition-all ${
+                              isSelected(String(optIdx))
+                                ? 'border-[#F4B5CD] bg-[#F4B5CD]/20'
+                                : 'border-white/20'
+                            }`}>
+                              {isSelected(String(optIdx)) && (
+                                <div className="w-1.5 h-1.5 rounded-full bg-[#F4B5CD]" />
+                              )}
+                            </div>
+                            <span className="leading-normal font-sans">{opt}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Введите ответ..."
+                          value={answers[q.id] || ''}
+                          onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                          className="w-full bg-black/40 border border-white/10 focus:border-[#F4B5CD]/40 rounded-xl px-4 py-3 text-xs text-white placeholder-white/30 outline-none transition"
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            {/* Error alerts */}
-            {submittingError && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-6 flex items-start gap-3 text-red-200 text-xs">
-                <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
-                <span>{submittingError}</span>
+            {/* Bottom Actions */}
+            <div className="mt-10 bg-gradient-to-b from-[#12131C] to-black/30 border border-white/5 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest block font-mono">Тест заполнен на</span>
+                <p className="text-xs text-white/80 font-sans mt-0.5 font-bold">
+                  {Object.keys(answers).length} из {activeTest.questions.length} вопросов ({Math.round((Object.keys(answers).length / activeTest.questions.length) * 100)}%)
+                </p>
               </div>
-            )}
-
-            {/* Submit Control bar */}
-            <div className="flex items-center justify-between gap-4 mb-16">
               <button
-                onClick={() => {
-                  if (confirm('Вы уверены, что хотите прервать тест? Прогресс сохранится автоматически.')) {
-                    setActiveTest(null);
-                  }
-                }}
-                className="px-5 py-2.5 rounded-xl border border-white/10 text-white/50 hover:text-white hover:bg-white/10 transition text-xs font-semibold cursor-pointer"
+                onClick={handleSubmitTest}
+                className="w-full sm:w-auto py-3 px-8 bg-gradient-to-r from-emerald-500/80 to-emerald-400/80 hover:from-emerald-500 hover:to-emerald-400 text-white text-xs font-bold uppercase tracking-wider transition rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/5 border border-emerald-500/25"
               >
-                Вернуться назад
-              </button>
-              
-              <button
-                onClick={() => setShowConfirmSubmit(true)}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-md hover:shadow-purple-500/20 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition duration-200 active:scale-95 cursor-pointer"
-              >
-                <CheckCircle className="w-4 h-4" />
-                <span>Завершить и отправить работу</span>
+                <Check className="w-4 h-4" />
+                Сдать тест на проверку
               </button>
             </div>
-
-            {/* Confirm Submit Dialog Modal */}
-            {showConfirmSubmit && (
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                <div className="bg-[#12131a] border border-white/10 rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-fadeIn text-white">
-                  <div className="w-12 h-12 rounded-2xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-xl mb-4 border border-purple-500/20 shadow-xs">
-                    ✍️
-                  </div>
-                  <h3 className="text-base font-bold text-white mb-2">Отправить работу?</h3>
-                  <p className="text-xs text-white/60 leading-relaxed mb-6">
-                    Все ваши ответы будут автоматически проверены. Учитель сразу увидит результаты, включая затраченное время и отметки сомневающихся заданий.
-                  </p>
-                  
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setShowConfirmSubmit(false)}
-                      className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition text-xs font-semibold cursor-pointer"
-                    >
-                      Ещё порешать
-                    </button>
-                    <button
-                      disabled={isSubmitting}
-                      onClick={handleSubmitTest}
-                      className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition active:scale-98 disabled:opacity-50 cursor-pointer"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Отправка...</span>
-                        </>
-                      ) : (
-                        <span>Отправить</span>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Result Code Modal */}
-            {resultCodeToCopy && (
-              <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                <div className="bg-[#12131a] border border-white/10 rounded-3xl p-6 shadow-2xl max-w-lg w-full animate-fadeIn text-white">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl mb-4 border border-emerald-500/20 shadow-xs">
-                    🎉
-                  </div>
-                  <h3 className="text-lg font-bold text-white mb-2">Тест успешно выполнен!</h3>
-                  <p className="text-xs text-white/70 leading-relaxed mb-4">
-                    Твой результат сохранён в твоём браузере. <strong className="text-[#C3B4FC]">Обязательно скопируй код ниже и отправь его учителю</strong> (в Telegram, WhatsApp или личные сообщения), чтобы он смог внести результаты в свой журнал:
-                  </p>
-                  
-                  <div className="relative mb-6">
-                    <textarea
-                      readOnly
-                      value={resultCodeToCopy}
-                      className="w-full h-32 p-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white/80 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(resultCodeToCopy);
-                        setCopiedResult(true);
-                        setTimeout(() => setCopiedResult(false), 2000);
-                      }}
-                      className="absolute right-2 bottom-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer"
-                    >
-                      {copiedResult ? (
-                        <>
-                          <Check className="w-3 h-3" />
-                          <span>Скопировано!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3" />
-                          <span>Скопировать</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-end">
-                    <button
-                      onClick={() => setResultCodeToCopy(null)}
-                      className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white/80 font-semibold rounded-xl text-xs transition cursor-pointer"
-                    >
-                      Закрыть
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
-        ) : (
-          /* Student Cabinet Dashboard (Summary stats & test listings) */
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-20 items-stretch">
-            {/* Left side: assigned & history */}
-            <div className="lg:col-span-8 flex flex-col space-y-8">
-              {/* Assigned Pending Tests */}
-              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs relative overflow-hidden">
-                <div className="absolute inset-0 bg-radial-at-t from-purple-500/[0.02] to-transparent pointer-events-none" />
-                <h3 className="font-bold text-white text-base flex items-center gap-2 mb-4">
-                  <span className="text-purple-400">📝</span>
-                  Назначенные тесты
-                  {pendingTests.length > 0 && (
-                    <span className="bg-purple-500/20 text-[#C3B4FC] text-[10px] px-2 py-0.5 rounded-full font-bold">
-                      {pendingTests.length}
-                    </span>
-                  )}
-                </h3>
+        )}
+      </div>
+    );
+  }
 
-                {pendingTests.length === 0 ? (
-                  <div className="text-center py-10 text-white/40 text-xs italic">
-                    На данный момент у вас нет невыполненных тестов. Отдыхайте! ☕
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {pendingTests.map(test => (
-                      <div key={test.id} className="bg-white/5 border border-white/10 hover:border-purple-500/30 rounded-xl p-4.5 flex flex-col justify-between hover:bg-purple-500/5 transition duration-200 group">
-                        <div>
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <span className="text-[9px] font-mono font-bold text-[#C3B4FC] bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded uppercase tracking-wider">
-                              {test.type === 'OGE' ? 'ОГЭ' : 'ЕГЭ'}
+  return (
+    <div className="min-h-screen bg-[#0C0D12] text-white/95 pb-20 font-sans">
+      {/* Sparkle background decoration */}
+      <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-purple-500/5 to-transparent pointer-events-none select-none" />
+
+      {/* Hero Welcome banner */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-10 pb-6 relative z-10">
+        <div className="bg-gradient-to-br from-white/[0.04] via-white/[0.02] to-transparent p-6 rounded-3xl border border-white/5 shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-gradient-to-tr from-[#F4B5CD]/20 to-purple-500/20 border border-[#F4B5CD]/30 rounded-2xl flex items-center justify-center shrink-0">
+              <Award className="w-7 h-7 text-[#F4B5CD]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-purple-500/20 border border-purple-500/30 px-2.5 py-0.5 rounded-xl text-purple-300 font-mono uppercase font-bold tracking-wider">
+                  Кабинет ученика
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-white mt-1">
+                {cabinet.studentName}
+              </h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-6 font-mono text-xs text-white/50 bg-black/20 px-4 py-2.5 rounded-2xl border border-white/5">
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase text-white/30 tracking-wider">Всего тестов</span>
+              <span className="text-sm font-bold text-white/80 mt-0.5">{cabinet.assignedTests.length}</span>
+            </div>
+            <div className="w-px h-6 bg-white/10" />
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase text-white/30 tracking-wider">Решено</span>
+              <span className="text-sm font-bold text-emerald-400 mt-0.5">{completedTests.length}</span>
+            </div>
+            <div className="w-px h-6 bg-white/10" />
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase text-white/30 tracking-wider">Ожидает</span>
+              <span className="text-sm font-bold text-[#F4B5CD] mt-0.5">
+                {cabinet.assignedTests.length - completedTests.length}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Selection */}
+        <div className="flex gap-2.5 mt-8 border-b border-white/5 pb-px">
+          <button
+            onClick={() => setActiveCabinetTab('tests')}
+            className={`pb-3 text-xs font-bold uppercase tracking-wider font-mono transition cursor-pointer relative ${
+              activeCabinetTab === 'tests' 
+                ? 'text-white' 
+                : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            <div className="flex items-center gap-2 px-3">
+              <List className="w-4 h-4" />
+              <span>Назначенные тесты</span>
+            </div>
+            {activeCabinetTab === 'tests' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#F4B5CD] rounded-full" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveCabinetTab('progress')}
+            className={`pb-3 text-xs font-bold uppercase tracking-wider font-mono transition cursor-pointer relative ${
+              activeCabinetTab === 'progress' 
+                ? 'text-white' 
+                : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            <div className="flex items-center gap-2 px-3">
+              <TrendingUp className="w-4 h-4" />
+              <span>Прогресс & Ошибки</span>
+            </div>
+            {activeCabinetTab === 'progress' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#F4B5CD] rounded-full" />
+            )}
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="mt-6">
+          {activeCabinetTab === 'tests' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {cabinet.assignedTests.length === 0 ? (
+                <div className="col-span-full bg-white/[0.01] border border-white/5 rounded-3xl p-10 text-center">
+                  <BookOpen className="w-10 h-10 text-white/20 mx-auto mb-4" />
+                  <h3 className="text-sm font-semibold text-white/80">Пока нет назначенных тестов</h3>
+                  <p className="text-xs text-white/40 mt-1 max-w-sm mx-auto leading-relaxed">
+                    Репетитор добавит тесты, и они сразу появятся на этой странице.
+                  </p>
+                </div>
+              ) : (
+                cabinet.assignedTests.map((t) => {
+                  const isSubmitted = t.status === 'submitted';
+                  
+                  return (
+                    <div
+                      key={t.id}
+                      className={`bg-gradient-to-br from-white/[0.03] to-white/[0.01] border rounded-2xl p-5 flex flex-col justify-between transition group ${
+                        isSubmitted 
+                          ? 'border-white/5 opacity-80' 
+                          : 'border-white/10 hover:border-[#F4B5CD]/30 hover:shadow-lg hover:shadow-[#F4B5CD]/2'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="bg-purple-500/10 border border-purple-500/20 text-[#C3B4FC] text-[9px] font-bold font-mono px-2 py-0.5 rounded-xl uppercase tracking-wider">
+                            {t.type}
+                          </span>
+                          
+                          {isSubmitted ? (
+                            <span className="flex items-center gap-1 text-[9px] uppercase font-bold text-emerald-400 font-mono bg-emerald-500/5 px-2 py-0.5 rounded-xl border border-emerald-500/10">
+                              <Check className="w-3 h-3" />
+                              Сдано
                             </span>
-                            <span className="text-[10px] text-white/40 font-medium flex items-center gap-1 font-mono">
-                              <Calendar className="w-3 h-3 text-white/30" />
-                              {safeFormatDate(test.assignedAt, { day: 'numeric', month: 'numeric', year: 'numeric' })}
+                          ) : (
+                            <span className="flex items-center gap-1 text-[9px] uppercase font-bold text-[#F4B5CD] font-mono bg-[#F4B5CD]/5 px-2 py-0.5 rounded-xl border border-[#F4B5CD]/10">
+                              <Clock className="w-3 h-3" />
+                              Ожидает решения
                             </span>
-                          </div>
-                          <h4 className="text-xs font-bold text-white leading-tight group-hover:text-[#C3B4FC] transition">{test.title}</h4>
-                          <p className="text-[10px] text-white/40 mt-1 font-medium">{test.questions.length} заданий с автопроверкой</p>
+                          )}
                         </div>
-                        <div className="mt-4 pt-3 border-t border-white/5">
-                          <button
-                            onClick={() => handleStartTest(test)}
-                            className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] uppercase font-bold tracking-wider transition duration-200 flex items-center justify-center gap-1.5 active:scale-98 shadow-xs cursor-pointer border-none"
-                          >
-                            <Play className="w-3 h-3 fill-current" />
-                            <span>Начать тест</span>
-                          </button>
+
+                        <h3 className="text-sm font-bold leading-snug group-hover:text-[#F4B5CD] transition">
+                          {t.title}
+                        </h3>
+
+                        <div className="flex items-center gap-3 text-[10px] text-white/40 font-mono mt-4">
+                          <span className="flex items-center gap-1">
+                            <BookOpen className="w-3.5 h-3.5 opacity-60" />
+                            {t.questions.length} зад.
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 opacity-60" />
+                            {new Date(t.assignedAt).toLocaleDateString('ru-RU')}
+                          </span>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
-              {/* History Summary Grid / Table */}
-              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs overflow-hidden">
-                <h3 className="font-bold text-white text-base flex items-center gap-2 mb-4">
-                  <span>📊</span>
-                  Сводная таблица по заданиям
-                </h3>
+                      {/* Action Button */}
+                      <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-between">
+                        {isSubmitted ? (
+                          <div className="text-xs font-mono">
+                            Результат:{' '}
+                            <span className="text-emerald-400 font-bold font-sans">
+                              {t.score}
+                            </span>{' '}
+                            / {t.totalQuestions}
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-[#F4B5CD] font-mono font-bold animate-pulse">
+                            Начать сейчас →
+                          </div>
+                        )}
 
-                {completedTests.length === 0 ? (
-                  <div className="text-center py-10 text-white/40 text-xs italic">
-                    Пройдите хотя бы один тест, чтобы здесь отображался детальный анализ ваших ответов.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse text-[11px]">
-                      <thead>
-                        <tr className="border-b border-white/5 text-white/40 font-semibold uppercase tracking-wider">
-                          <th className="pb-3 pr-4 font-sans font-medium min-w-[90px]">Дата</th>
-                          <th className="pb-3 pr-4 font-sans font-medium min-w-[130px]">Название теста</th>
-                          <th className="pb-3 pr-4 font-sans font-medium text-center min-w-[60px]">Итог</th>
-                          {/* List numbers 1 to maxQuestionsCount */}
-                          {Array.from({ length: maxQuestionsCount }).map((_, i) => (
-                            <th key={i} className="pb-3 px-1 text-center font-mono font-bold w-6">{i + 1}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {completedTests.map(test => {
-                          const formattedDate = safeFormatDate(test.submittedAt, { day: 'numeric', month: 'short' });
-                          
-                          return (
-                            <tr key={test.id} className="hover:bg-white/5 transition">
-                              <td className="py-3.5 pr-4 text-white/50 font-medium font-mono">{formattedDate}</td>
-                              <td className="py-3.5 pr-4">
-                                <span className="font-bold text-white block leading-snug">{test.title}</span>
-                                <span className="text-[9px] text-white/40 font-medium uppercase font-mono tracking-wider">{test.type === 'OGE' ? 'ОГЭ' : 'ЕГЭ'}</span>
-                              </td>
-                              <td className="py-3.5 pr-4 text-center">
-                                <span className="bg-purple-500/20 text-purple-200 border border-purple-500/30 px-2 py-0.5 rounded-md font-bold font-mono text-[10px]">
-                                  {test.score}/{test.totalQuestions}
-                                </span>
-                              </td>
-                              
-                              {/* Results by questions */}
-                              {Array.from({ length: maxQuestionsCount }).map((_, i) => {
-                                const question = test.questions[i];
-                                if (!question) {
-                                  return <td key={i} className="py-3.5 px-1 text-center text-white/20">-</td>;
-                                }
-
-                                const isCorrect = test.checkedResults ? test.checkedResults[question.id] : false;
-                                const wantDiscuss = test.wantToDiscuss ? test.wantToDiscuss[question.id] : false;
-
-                                return (
-                                  <td key={i} className="py-3.5 px-1 text-center align-middle">
-                                    <div className="flex flex-col items-center justify-center gap-0.5">
-                                      {isCorrect ? (
-                                        <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-mono font-bold text-[10px]" title={`Задание ${i+1}: Верно`}>+</span>
-                                      ) : (
-                                        <span className="w-5 h-5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center font-mono font-bold text-[10px]" title={`Задание ${i+1}: Ошибка`}>-</span>
-                                      )}
-                                      
-                                      {wantDiscuss && (
-                                        <MessageSquare className="w-2.5 h-2.5 text-amber-500 fill-amber-500/10" title="Хочу обсудить" />
-                                      )}
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+                        <button
+                          onClick={() => handleStartTest(t)}
+                          disabled={isSubmitted}
+                          className={`py-1.5 px-4 text-[10px] uppercase font-extrabold tracking-wider transition rounded-xl font-mono ${
+                            isSubmitted
+                              ? 'bg-white/5 border border-white/5 text-white/30 cursor-not-allowed'
+                              : 'bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/35 text-[#F4B5CD] cursor-pointer'
+                          }`}
+                        >
+                          {isSubmitted ? 'Сдано' : 'Решать'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
+          ) : (
+            /* Progress & Error Matrix Tab */
+            <div className="space-y-6">
+              {completedTests.length === 0 ? (
+                <div className="bg-white/[0.01] border border-white/5 rounded-3xl p-10 text-center">
+                  <TrendingUp className="w-10 h-10 text-white/20 mx-auto mb-4" />
+                  <h3 className="text-sm font-semibold text-white/80">Пока нет статистики</h3>
+                  <p className="text-xs text-white/40 mt-1 max-w-sm mx-auto">
+                    Выполните и сдайте первый тест, чтобы здесь появился график прогресса успеваемости и подробный анализ ошибок.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Custom Svg Chart */}
+                  <div className="bg-gradient-to-b from-white/[0.03] to-white/[0.01] border border-white/5 p-6 rounded-2xl">
+                    <div className="flex justify-between items-center mb-6">
+                      <div>
+                        <span className="text-[9px] uppercase tracking-wider text-white/40 font-bold block">Динамика успеваемости</span>
+                        <h3 className="text-sm font-bold mt-0.5">Средняя точность ответов</h3>
+                      </div>
+                      <div className="text-emerald-400 font-mono text-sm font-bold bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-xl">
+                        {Math.round(
+                          (completedTests.reduce((sum, t) => sum + (t.score || 0), 0) /
+                            completedTests.reduce((sum, t) => sum + (t.totalQuestions || 0), 0)) *
+                            100
+                        )}
+                        %
+                      </div>
+                    </div>
 
-            {/* Right side: visual chart & metrics stats */}
-            <div className="lg:col-span-4 flex flex-col space-y-8">
-              {/* Progress dynamic chart */}
-              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs flex flex-col">
-                <h3 className="font-bold text-white text-base flex items-center gap-2 mb-4">
-                  <span className="text-purple-400">📈</span>
-                  График успеваемости
-                </h3>
+                    {/* Beautiful minimalist line chart inside SVG */}
+                    <div className="h-44 w-full mt-4">
+                      <svg className="w-full h-full overflow-visible" viewBox="0 0 500 100" preserveAspectRatio="none">
+                        {/* Define gradients */}
+                        <defs>
+                          <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#F4B5CD" stopOpacity="0.2" />
+                            <stop offset="100%" stopColor="#F4B5CD" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        {/* Guidelines */}
+                        <line x1="0" y1="10" x2="500" y2="10" stroke="rgba(255,255,255,0.04)" strokeDasharray="4" strokeWidth="0.5" />
+                        <line x1="0" y1="50" x2="500" y2="50" stroke="rgba(255,255,255,0.04)" strokeDasharray="4" strokeWidth="0.5" />
+                        <line x1="0" y1="90" x2="500" y2="90" stroke="rgba(255,255,255,0.04)" strokeDasharray="4" strokeWidth="0.5" />
 
-                {completedTests.length === 0 ? (
-                  <div className="text-center py-10 text-white/40 text-xs italic flex-1 flex items-center justify-center">
-                    График построится после сдачи тестов.
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col justify-between">
-                    {/* SVG Line Chart */}
-                    <div className="h-44 w-full relative pt-2 mb-2">
-                      <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        {/* Grid lines */}
-                        <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="0.5" />
-                        <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="0.5" />
-                        <line x1="0" y1="80" x2="100" y2="80" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="0.5" />
-                        
-                        {/* Score Line */}
+                        {/* Chart path builder */}
                         {(() => {
-                          const len = chartPoints.length;
-                          if (len < 1) return null;
-                          if (len === 1) {
-                            const p = chartPoints[0];
-                            const cy = 100 - p.percentage;
-                            return <circle cx="50" cy={cy} r="4" fill="#C3B4FC" stroke="#8b5cf6" strokeWidth="2" />;
-                          }
-                          
-                          const points = chartPoints.map((p, i) => {
-                            const cx = (i / (len - 1)) * 100;
-                            // percentages map 0% -> y=100, 100% -> y=0. We'll add some padding: 90 is max, 10 is min
-                            const cy = 90 - (p.percentage / 100) * 80;
-                            return { cx, cy, p };
+                          const padding = 15;
+                          const w = 500;
+                          const h = 100;
+                          const points = completedTests.map((t, idx) => {
+                            const x = idx === 0 && completedTests.length === 1 
+                              ? w / 2 
+                              : padding + (idx * (w - padding * 2)) / Math.max(1, completedTests.length - 1);
+                            
+                            const scorePercent = t.totalQuestions ? (t.score || 0) / t.totalQuestions : 0;
+                            // Invert: 0% -> 90px, 100% -> 10px
+                            const y = 90 - scorePercent * 80;
+                            return { x, y, title: t.title, percent: Math.round(scorePercent * 100) };
                           });
 
-                          const pathD = `M ${points.map(pt => `${pt.cx},${pt.cy}`).join(' L ')}`;
+                          let dPath = '';
+                          let dArea = '';
+
+                          if (points.length > 0) {
+                            dPath = `M ${points[0].x} ${points[0].y}`;
+                            dArea = `M ${points[0].x} 95 L ${points[0].x} ${points[0].y}`;
+                            
+                            for (let i = 1; i < points.length; i++) {
+                              dPath += ` L ${points[i].x} ${points[i].y}`;
+                              dArea += ` L ${points[i].x} ${points[i].y}`;
+                            }
+                            
+                            dArea += ` L ${points[points.length - 1].x} 95 Z`;
+                          }
 
                           return (
                             <>
-                              {/* Background Gradient Area under line */}
-                              <path
-                                d={`${pathD} L ${points[points.length - 1].cx},95 L ${points[0].cx},95 Z`}
-                                fill="url(#chartGrad)"
-                                opacity="0.15"
-                              />
-                              {/* Main Line */}
-                              <path
-                                d={pathD}
-                                fill="none"
-                                stroke="#8b5cf6"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                              {/* Circular markers */}
-                              {points.map((pt, i) => (
-                                <circle
-                                  key={i}
-                                  cx={pt.cx}
-                                  cy={pt.cy}
-                                  r="3"
-                                  fill="#12131a"
-                                  stroke="#8b5cf6"
-                                  strokeWidth="2"
-                                  className="transition-all hover:r-4 duration-150 cursor-pointer"
-                                  title={`${pt.p.title}: ${pt.p.percentage}%`}
-                                />
-                              ))}
+                              {/* Filled Area */}
+                              {dArea && <path d={dArea} fill="url(#chartGrad)" />}
                               
-                              {/* Definitions for gradient */}
-                              <defs>
-                                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#8b5cf6" />
-                                  <stop offset="100%" stopColor="#12131a" />
-                                </linearGradient>
-                              </defs>
+                              {/* Line */}
+                              {dPath && (
+                                <path 
+                                  d={dPath} 
+                                  fill="none" 
+                                  stroke="#F4B5CD" 
+                                  strokeWidth="2" 
+                                  strokeLinecap="round" 
+                                  strokeLinejoin="round" 
+                                />
+                              )}
+
+                              {/* Interactive dots */}
+                              {points.map((p, idx) => (
+                                <g key={idx} className="group/dot cursor-pointer">
+                                  <circle 
+                                    cx={p.x} 
+                                    cy={p.y} 
+                                    r="4" 
+                                    fill="#0C0D12" 
+                                    stroke="#F4B5CD" 
+                                    strokeWidth="2.5" 
+                                    className="transition-all duration-200 group-hover/dot:r-5 group-hover/dot:stroke-white"
+                                  />
+                                  {/* Tooltip on hover */}
+                                  <foreignObject
+                                    x={p.x - 45}
+                                    y={p.y - 30}
+                                    width="90"
+                                    height="25"
+                                    className="opacity-0 group-hover/dot:opacity-100 transition duration-200 pointer-events-none"
+                                  >
+                                    <div className="bg-[#12131C] border border-white/10 rounded px-1.5 py-0.5 text-[8px] font-mono text-center text-white/90 truncate shadow-xl">
+                                      {p.percent}%
+                                    </div>
+                                  </foreignObject>
+                                </g>
+                              ))}
                             </>
                           );
                         })()}
                       </svg>
                     </div>
 
-                    {/* X-axis Labels */}
-                    <div className="flex justify-between text-[9px] text-white/40 font-bold font-mono px-1">
-                      {chartPoints.map((pt, i) => (
-                        <span key={i} className="truncate max-w-[40px]" title={pt.title}>
-                          {pt.date}
+                    {/* Timeline indicators */}
+                    <div className="flex justify-between items-center text-[8px] font-mono text-white/30 px-2 mt-2">
+                      <span>Начало</span>
+                      <span>Всего {completedTests.length} реш. тестов</span>
+                      <span>Конец</span>
+                    </div>
+                  </div>
+
+                  {/* Summary Error Matrix */}
+                  <div className="bg-gradient-to-b from-white/[0.03] to-white/[0.01] border border-white/5 p-6 rounded-2xl">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+                      <div>
+                        <span className="text-[9px] uppercase tracking-wider text-white/40 font-bold block">Сводная матрица</span>
+                        <h3 className="text-sm font-bold mt-0.5">Карта ошибок по заданиям</h3>
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] font-mono text-white/50">
+                        <span className="flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-400" /> Верно
                         </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* General Performance Summary card */}
-              <div className="bg-[#12131a]/80 border border-white/5 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
-                <div>
-                  <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-1.5 mb-3 border-b border-white/5 pb-2">
-                    <Award className="w-4 h-4 text-purple-400" />
-                    Результаты
-                  </h3>
-                  
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-white/60 font-medium">Решено тестов:</span>
-                      <span className="text-xs font-bold text-white font-mono">{completedTests.length}</span>
-                    </div>
-                    
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-white/60 font-medium">Средний результат:</span>
-                      <span className="text-xs font-bold text-purple-200 font-mono bg-purple-500/20 px-2 py-0.5 rounded-md border border-purple-500/30">
-                        {completedTests.length > 0 
-                          ? Math.round(completedTests.reduce((sum, t) => sum + (t.totalQuestions ? ((t.score || 0)/t.totalQuestions) * 100 : 0), 0) / completedTests.length)
-                          : 0}%
-                      </span>
+                        <span className="flex items-center gap-1">
+                          <X className="w-3 h-3 text-red-400" /> Ошибка
+                        </span>
+                        <span className="flex items-center gap-1 text-[#F4B5CD]">
+                          <HelpCircle className="w-3 h-3" /> Обсудить
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-white/60 font-medium">Ожидают решения:</span>
-                      <span className="text-xs font-bold text-white font-mono">{pendingTests.length}</span>
+                    {/* Responsive table wrapper */}
+                    <div className="overflow-x-auto rounded-xl border border-white/5 bg-black/20">
+                      <table className="w-full text-left border-collapse min-w-[500px]">
+                        <thead>
+                          <tr className="border-b border-white/5 bg-white/[0.02] text-[9px] uppercase tracking-wider font-mono text-white/40 font-bold">
+                            <th className="py-3 px-4 font-normal">Название теста / Дата</th>
+                            {Array.from({ length: maxQuestionCount }).map((_, idx) => (
+                              <th key={idx} className="py-3 px-3 text-center font-normal">
+                                Зад. {idx + 1}
+                              </th>
+                            ))}
+                            <th className="py-3 px-4 text-right font-normal">Верно</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-xs">
+                          {completedTests.map((t) => (
+                            <tr key={t.id} className="hover:bg-white/[0.01] transition font-sans">
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-white/90 truncate max-w-[180px] sm:max-w-xs">{t.title}</div>
+                                <div className="text-[9px] text-white/30 font-mono mt-0.5">
+                                  {t.submittedAt || 'Дата не указана'}
+                                </div>
+                              </td>
+                              
+                              {/* Tasks matrix cells */}
+                              {Array.from({ length: maxQuestionCount }).map((_, idx) => {
+                                const q = t.questions[idx];
+                                if (!q) {
+                                  return (
+                                    <td key={idx} className="py-3 px-3 text-center text-white/10 font-mono text-[10px]">
+                                      —
+                                    </td>
+                                  );
+                                }
+
+                                const isCorrect = t.checkedResults?.[q.id];
+                                const isDiscussed = t.wantToDiscuss?.[q.id];
+
+                                return (
+                                  <td key={idx} className="py-3 px-3 text-center">
+                                    <div className="inline-flex flex-col items-center gap-1">
+                                      {isCorrect ? (
+                                        <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                                          <Check className="w-3 h-3 text-emerald-400" />
+                                        </div>
+                                      ) : (
+                                        <div className="w-5 h-5 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                                          <X className="w-3 h-3 text-red-400" />
+                                        </div>
+                                      )}
+                                      
+                                      {isDiscussed && (
+                                        <span className="text-[8px] bg-[#F4B5CD]/10 text-[#F4B5CD] border border-[#F4B5CD]/20 px-1 rounded font-mono font-bold">
+                                          ОБСУДИТЬ
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+
+                              <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
+                                {t.score} <span className="text-white/30 text-[10px]">/ {t.questions.length}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                </div>
-
-                {completedTests.length > 0 && (
-                  <div className="mt-6 p-3.5 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-                    <p className="text-[10px] text-purple-200 leading-relaxed font-medium">
-                      💡 Результаты тестов сохраняются автоматически и синхронизируются с преподавателем в реальном времени. Все ошибки и сомнительные вопросы можно разобрать на ближайшем уроке!
-                    </p>
-                  </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
-          </div>
-        )}
-      </main>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

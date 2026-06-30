@@ -3,6 +3,8 @@ import { Student, SyllabusProgram, CalendarReminder, StudentCabinet } from './ty
 import { getInitialStudents, saveStudents, INITIAL_STUDENTS, getInitialPrograms, savePrograms } from './data';
 import { syncAllStudents } from './utils/paymentSync';
 import { safeStorage } from './utils/safeStorage';
+import { collection, query, where, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
 import { StudentCard } from './components/StudentCard';
 import { StudentDetail } from './components/StudentDetail';
 import { DashboardStats } from './components/DashboardStats';
@@ -18,13 +20,12 @@ import {
   ChevronLeft, ChevronRight, X, Trash2, ArrowUp, Sparkles, Moon
 } from 'lucide-react';
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { StudentCabinetView } from './components/StudentCabinetView';
 import { TestsManager } from './components/TestsManager';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { doc, setDoc, collection, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
 
 export default function App() {
+  // Direct student cabinet rendering from URL params (completely decouples student from Firebase)
   const queryParams = new URLSearchParams(window.location.search);
   const rawCabinetId = queryParams.get('cabinet');
   const cabinetId = rawCabinetId ? rawCabinetId.trim() : null;
@@ -40,46 +41,8 @@ export default function App() {
 
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tests'>('dashboard');
   const [showScrollTop, setShowScrollTop] = useState(false);
-
-  const [previewCabinetId, setPreviewCabinetId] = useState<string | null>(null);
-  const [previewCabinetName, setPreviewCabinetName] = useState<string>('');
-
-  if (previewCabinetId) {
-    return (
-      <ErrorBoundary fallbackTitle="Ошибка просмотра кабинета">
-        <div className="bg-[#12131a] min-h-screen text-white">
-          <div className="bg-[#12131a]/90 backdrop-blur-md px-6 py-4 flex items-center justify-between border-b border-white/5 sticky top-0 z-50">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  setPreviewCabinetId(null);
-                }}
-                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 transition text-xs flex items-center gap-1.5 cursor-pointer font-bold uppercase tracking-wider border border-white/10"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                В панель преподавателя
-              </button>
-              <div className="text-white/20 font-mono text-xs hidden sm:block">/</div>
-              <div className="text-white/90 text-sm font-semibold items-center gap-2 hidden sm:flex">
-                <span>Режим просмотра кабинета:</span>
-                <span className="bg-purple-500/20 border border-purple-500/30 text-[#C3B4FC] px-2.5 py-1 rounded-xl text-xs font-mono font-bold">
-                  {previewCabinetName}
-                </span>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 rounded-xl text-[10px] text-[#C3B4FC] font-bold uppercase tracking-wider font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
-              <span>Режим репетитора</span>
-            </div>
-          </div>
-          <StudentCabinetView cabinetId={previewCabinetId} />
-        </div>
-      </ErrorBoundary>
-    );
-  }
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tests'>('dashboard');
 
   // Dynamic Theme (gothic or cosmic)
   const [theme, setTheme] = useState<'gothic' | 'cosmic'>(() => {
@@ -247,123 +210,75 @@ export default function App() {
     reconnectSync,
   } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
 
-  // Self-healing: Ensure every student has a cabinet generated locally and synchronized to the tutor's user document
+  // Cabinets state (lifted up for global dashboard sync, cards & parent reports)
+  const [cabinets, setCabinets] = useState<Record<string, StudentCabinet>>(() => {
+    const stored = safeStorage.getItem('tutor_local_cabinets');
+    try {
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Real-time listener for Tutor's Cabinets in Firestore (handles both logged-in and guest tutors)
   useEffect(() => {
-    if (students.length === 0) return;
+    let unsubscribes: (() => void)[] = [];
 
-    const ensureCabinets = async () => {
-      try {
-        let updatedStudentsList = [...students];
-        let wasStudentsUpdated = false;
+    if (user) {
+      const q = query(collection(db, 'cabinets'), where('tutorId', '==', user.uid));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const dbCabs: Record<string, StudentCabinet> = {};
+        snapshot.forEach((doc) => {
+          dbCabs[doc.id] = doc.data() as StudentCabinet;
+        });
 
-        // Ensure activeTutorId exists
-        let activeTutorId = user ? user.uid : localStorage.getItem('guest_tutor_id');
-        if (!activeTutorId) {
-          activeTutorId = `guest_${Math.random().toString(36).substring(2, 11)}`;
-          localStorage.setItem('guest_tutor_id', activeTutorId);
-        }
-
-        // Load local cabinets map
-        const stored = localStorage.getItem('tutor_local_cabinets');
-        let localCabinets: Record<string, StudentCabinet> = {};
-        if (stored) {
-          try {
-            localCabinets = JSON.parse(stored);
-          } catch (e) {
-            console.error('Error parsing local cabinets:', e);
+        setCabinets(prev => {
+          const merged = { ...prev, ...dbCabs };
+          safeStorage.setItem('tutor_local_cabinets', JSON.stringify(merged));
+          return merged;
+        });
+      }, (error) => {
+        console.error('Error listening to cabinets in Firestore:', error);
+      });
+      unsubscribes.push(unsubscribe);
+    } else {
+      // Guest tutor: subscribe to cabinets of their local students for seamless instant sync
+      const cabIds = students.map(s => s.cabinetId).filter(Boolean) as string[];
+      cabIds.forEach(cabId => {
+        const docRef = doc(db, 'cabinets', cabId);
+        const unsubscribe = onSnapshot(docRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data() as StudentCabinet;
+            setCabinets(prev => {
+              const updated = { ...prev, [cabId]: data };
+              safeStorage.setItem('tutor_local_cabinets', JSON.stringify(updated));
+              return updated;
+            });
           }
-        }
+        });
+        unsubscribes.push(unsubscribe);
+      });
+    }
 
-        let isCabsModified = false;
-        const modifiedCabinetIds: string[] = [];
-
-        for (let i = 0; i < updatedStudentsList.length; i++) {
-          const student = updatedStudentsList[i];
-          let cabinetId = student.cabinetId;
-
-          if (cabinetId) {
-            let cabinetObj = localCabinets[cabinetId];
-            if (cabinetObj) {
-              let isCabinetModified = false;
-              if (cabinetObj.tutorId !== activeTutorId) {
-                cabinetObj.tutorId = activeTutorId;
-                isCabinetModified = true;
-              }
-              if (cabinetObj.studentName !== student.name) {
-                cabinetObj.studentName = student.name;
-                isCabinetModified = true;
-              }
-              if (isCabinetModified) {
-                localCabinets[cabinetId] = cabinetObj;
-                isCabsModified = true;
-                modifiedCabinetIds.push(cabinetId);
-              }
-            }
-            continue;
-          }
-
-          // If no cabinetId exists AT ALL on the student, generate a brand new one!
-          if (!cabinetId) {
-            cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
-            const newCabinet: StudentCabinet = {
-              id: cabinetId,
-              studentId: student.id,
-              studentName: student.name,
-              tutorId: activeTutorId,
-              createdAt: new Date().toISOString(),
-              assignedTests: []
-            };
-
-            // Save to local map
-            localCabinets[cabinetId] = newCabinet;
-            isCabsModified = true;
-            modifiedCabinetIds.push(cabinetId);
-            
-            // Mark student to be updated with the new cabinetId
-            updatedStudentsList[i] = { ...student, cabinetId };
-            wasStudentsUpdated = true;
-          }
-        }
-
-        if (isCabsModified) {
-          localStorage.setItem('tutor_local_cabinets', JSON.stringify(localCabinets));
-          // Perform Firestore writes in background as fire-and-forget to avoid blocking the UI thread
-          (async () => {
-            try {
-              for (const cabId of modifiedCabinetIds) {
-                const cab = localCabinets[cabId];
-                if (cab && cab.tutorId === activeTutorId) {
-                  setDoc(doc(db, 'cabinets', cab.id), cab).catch(err => {
-                    console.warn('Failed to sync cabinet in ensureCabinets background:', err);
-                  });
-                }
-              }
-              if (user) {
-                const userDocRef = doc(db, 'users', user.uid);
-                setDoc(userDocRef, {
-                  cabinets: localCabinets,
-                  lastUpdated: new Date().toISOString()
-                }, { merge: true }).catch(err => {
-                  console.warn('Failed to backup cabinets in ensureCabinets background:', err);
-                });
-              }
-            } catch (err) {
-              console.warn('Silent warning: Failed background sync in ensureCabinets:', err);
-            }
-          })();
-        }
-
-        // If any student was assigned a new cabinetId, trigger updateStudents to propagate
-        if (wasStudentsUpdated) {
-          handleUpdateStudents(updatedStudentsList);
-        }
-      } catch (e) {
-        console.error('Error auto-healing local cabinets:', e);
-      }
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
     };
+  }, [user, students.map(s => s.cabinetId).join(',')]);
 
-    ensureCabinets();
-  }, [students, user]);
+  // Helper to save cabinets locally and sync to Cloud
+  const handleUpdateCabinets = async (updatedCabs: Record<string, StudentCabinet>) => {
+    setCabinets(updatedCabs);
+    safeStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
+
+    try {
+      for (const [cabId, cab] of Object.entries(updatedCabs)) {
+        const docRef = doc(db, 'cabinets', cabId);
+        await setDoc(docRef, cab, { merge: true });
+      }
+    } catch (err) {
+      console.error('Failed to sync updated cabinet to cloud:', err);
+    }
+  };
 
   const updateTimestamp = () => {
     const timestamp = new Date().toISOString();
@@ -687,44 +602,31 @@ export default function App() {
           <div className="flex gap-4 md:gap-6 text-[9px] md:text-[10px] uppercase tracking-[0.2em] font-medium items-center shrink-0">
             <button
               onClick={() => {
+                setActiveTab('dashboard');
                 setSelectedStudentId(null);
                 setFilterDebtOnly(false);
-                setActiveTab('dashboard');
               }}
               className={`cursor-pointer transition duration-200 pb-0.5 ${
-                !selectedStudentId && !filterDebtOnly && activeTab === 'dashboard'
+                activeTab === 'dashboard' && !selectedStudentId && !filterDebtOnly
                   ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
                   : 'text-white/40 hover:text-white'
               }`}
             >
-              Dashboard
+              Рабочий стол
             </button>
             <button
               onClick={() => {
-                setSelectedStudentId(null);
-                setFilterDebtOnly(false);
                 setActiveTab('tests');
+                setSelectedStudentId(null);
+                setFilterDebtOnly(false);
               }}
               className={`cursor-pointer transition duration-200 pb-0.5 ${
-                !selectedStudentId && activeTab === 'tests'
+                activeTab === 'tests' && !selectedStudentId
                   ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
                   : 'text-white/40 hover:text-white'
               }`}
             >
-              Тесты
-            </button>
-            <button
-              onClick={() => {
-                setSelectedStudentId(null);
-                setFilterDebtOnly(false);
-                setActiveTab('dashboard');
-                setTimeout(() => {
-                  document.getElementById('students-catalog')?.scrollIntoView({ behavior: 'smooth' });
-                }, 100);
-              }}
-              className="cursor-pointer transition duration-200 pb-0.5 text-white/40 hover:text-white"
-            >
-              Students
+              Кабинеты & Тесты
             </button>
           </div>
         </div>
@@ -793,35 +695,34 @@ export default function App() {
         <div className="animate-fadeIn">
           <StudentDetail 
             student={selectedStudent}
+            cabinet={selectedStudent.cabinetId ? cabinets[selectedStudent.cabinetId] : null}
             onBack={() => setSelectedStudentId(null)}
             onUpdateStudent={handleUpdateStudent}
-            onPreviewCabinet={(cabId) => {
-              setPreviewCabinetId(cabId);
-              setPreviewCabinetName(selectedStudent.name);
-            }}
           />
           
           {/* Advanced Danger Option inside Cabinet detail */}
           <div className="max-w-5xl mx-auto px-4 md:px-6 pb-20 -mt-10">
             <div className="bg-red-955/10 border border-red-900/20 rounded-2xl p-5 mt-6 flex flex-col md:flex-row items-center justify-between gap-4">
               <div>
-                <h4 className="text-xs uppercase tracking-wider font-semibold text-red-100">Красная зона кабинета</h4>
-                <p className="text-xs text-red-400/70 mt-1">Выпускной или завершение курса? Вы можете безвозвратно архивировать/стереть базу ученика.</p>
+                <h4 className="text-xs uppercase tracking-wider font-semibold text-red-100">Красная зона</h4>
+                <p className="text-xs text-red-400/70 mt-1">Выпускной или завершение курса? Вы можете безвозвратно удалить профиль ученика и все связанные с ним данные.</p>
               </div>
               <button
                 onClick={() => handleDeleteStudent(selectedStudent.id)}
                 className="px-4 py-2 rounded-xl bg-red-950/60 hover:bg-red-900 text-red-200 border border-red-900/55 text-xs font-semibold shadow-xs transition duration-200"
               >
-                Удалить кабинет ученика
+                Удалить профиль ученика
               </button>
             </div>
           </div>
         </div>
       ) : activeTab === 'tests' ? (
         <TestsManager 
-          students={students}
-          onUpdateStudents={handleUpdateStudents}
-          user={user}
+          students={students} 
+          onUpdateStudents={handleUpdateStudents} 
+          user={user} 
+          cabinets={cabinets}
+          onUpdateCabinets={handleUpdateCabinets}
         />
       ) : (
         /* Home Workspace view */
@@ -1224,6 +1125,7 @@ export default function App() {
                     <StudentCard 
                       key={student.id}
                       student={student}
+                      cabinet={student.cabinetId ? cabinets[student.cabinetId] : null}
                       onSelect={() => setSelectedStudentId(student.id)}
                     />
                   ))}
