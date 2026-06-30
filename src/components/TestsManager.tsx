@@ -7,6 +7,7 @@ import {
 import { Student, StudentCabinet, TestTemplate, TestQuestion, AssignedTest } from '../types';
 import { encodeData, decodeData, toCompact, fromCompact, decompressResult } from '../utils/codec';
 import { safeStorage } from '../utils/safeStorage';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface TestsManagerProps {
   students: Student[];
@@ -303,14 +304,17 @@ export function TestsManager({ students, onUpdateStudents, user, cabinets: propC
   };
 
   // Copy cabinet dynamic cloud-synced URL
-  const handleCopyCabinetLink = (cab: StudentCabinet) => {
+  const handleCopyCabinetLink = async (cab: StudentCabinet) => {
     const origin = window.location.origin;
     const link = `${origin}${window.location.pathname}?cabinetId=${cab.id}`;
 
-    navigator.clipboard.writeText(link).then(() => {
+    const success = await copyToClipboard(link);
+    if (success) {
       setCopiedCabinetId(cab.id);
       setTimeout(() => setCopiedCabinetId(null), 3000);
-    });
+    } else {
+      alert(`Не удалось скопировать автоматически. Скопируйте вручную:\n\n${link}`);
+    }
   };
 
   // Assign Test to Student Cabinet

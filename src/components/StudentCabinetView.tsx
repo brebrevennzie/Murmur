@@ -8,6 +8,7 @@ import { decodeData, toCompact, fromCompact, compressResult, CompactResult } fro
 import { safeStorage } from '../utils/safeStorage';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface StudentCabinetViewProps {
   cabinetId?: string | null;
@@ -81,6 +82,7 @@ export function StudentCabinetView({ cabinetId, cabinetData }: StudentCabinetVie
           }
         }, (err) => {
           console.error('Firestore subscription error:', err);
+          setError(`Ошибка синхронизации с сервером: ${err.message || err}. Если у вас включен VPN или заблокирован доступ к базам данных, попросите репетитора отправить "Автономную офлайн-ссылку" — она работает без интернета и баз данных.`);
         });
 
         return () => unsubscribe();
@@ -211,12 +213,15 @@ export function StudentCabinetView({ cabinetId, cabinetData }: StudentCabinetVie
   };
 
   // Copy result code
-  const handleCopyCode = () => {
+  const handleCopyCode = async () => {
     if (!submittedResult) return;
-    navigator.clipboard.writeText(submittedResult.code).then(() => {
+    const success = await copyToClipboard(submittedResult.code);
+    if (success) {
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2000);
-    });
+    } else {
+      alert(`Не удалось скопировать автоматически. Выделите и скопируйте код из текстового поля.`);
+    }
   };
 
   // Generate messenger text

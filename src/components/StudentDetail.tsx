@@ -5,6 +5,7 @@ import { PaymentReportModal } from './PaymentReportModal';
 import { parseRawKtpText, normalizeScheduleText } from '../utils/scheduleParser';
 import { safeStorage } from '../utils/safeStorage';
 import { encodeData, toCompact } from '../utils/codec';
+import { copyToClipboard } from '../utils/clipboard';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { 
@@ -2985,10 +2986,14 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                     </div>
                     <div className="flex gap-2 w-full">
                       <button
-                        onClick={() => {
-                          const link = `${window.location.origin}/?cabinetId=${student.cabinetId}`;
-                          navigator.clipboard.writeText(link);
-                          alert('Облачная ссылка кабинета скопирована!');
+                        onClick={async () => {
+                          const link = `${window.location.origin}${window.location.pathname}?cabinetId=${student.cabinetId}`;
+                          const success = await copyToClipboard(link);
+                          if (success) {
+                            alert('Облачная ссылка кабинета скопирована!');
+                          } else {
+                            alert(`Не удалось скопировать автоматически. Скопируйте вручную:\n\n${link}`);
+                          }
                         }}
                         className="flex-1 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD] py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 font-mono"
                       >
@@ -2996,7 +3001,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                         Копировать ссылку
                       </button>
                       <a
-                        href={`${window.location.origin}/?cabinetId=${student.cabinetId}`}
+                        href={`${window.location.origin}${window.location.pathname}?cabinetId=${student.cabinetId}`}
                         target="_blank"
                         rel="noreferrer"
                         className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 font-mono"
@@ -3025,30 +3030,36 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                     </div>
                     <div className="flex gap-2 w-full">
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           const compact = toCompact(cabinet);
                           const encoded = encodeData(compact);
-                          const link = `${window.location.origin}/?cabinet_data=${encoded}`;
-                          navigator.clipboard.writeText(link);
-                          alert('Автономная ссылка с тестами скопирована! Отправьте её ученику.');
+                          const link = `${window.location.origin}${window.location.pathname}?cabinet_data=${encoded}`;
+                          const success = await copyToClipboard(link);
+                          if (success) {
+                            alert('Автономная ссылка с тестами скопирована! Отправьте её ученику.');
+                          } else {
+                            alert(`Не удалось скопировать автоматически. Скопируйте вручную:\n\n${link}`);
+                          }
                         }}
                         className="flex-1 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-200 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 font-mono"
                       >
                         <Copy className="w-3.5 h-3.5" />
                         Копировать автономную
                       </button>
-                      <button
-                        onClick={() => {
+                      <a
+                        href={(() => {
+                          if (!cabinet) return '#';
                           const compact = toCompact(cabinet);
                           const encoded = encodeData(compact);
-                          const url = `${window.location.origin}/?cabinet_data=${encoded}`;
-                          window.open(url, '_blank');
-                        }}
+                          return `${window.location.origin}${window.location.pathname}?cabinet_data=${encoded}`;
+                        })()}
+                        target="_blank"
+                        rel="noreferrer"
                         className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 font-mono"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Открыть автономно
-                      </button>
+                      </a>
                     </div>
                   </div>
                 </div>
