@@ -215,11 +215,6 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
   const handleSubmitTest = async () => {
     if (!activeTest) return;
     
-    // Confirmation
-    if (!window.confirm('Вы уверены, что хотите завершить тест и сдать его на проверку?')) {
-      return;
-    }
-
     setSubmitting(true);
 
     const checkedResults: Record<string, boolean> = {};
@@ -705,14 +700,9 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
           /* TEST RESULTS ANALYSIS / ERROR VIEW */
           <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
             {/* Success Banner */}
-            <div className="bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 p-4 rounded-2xl flex items-start gap-3">
+            <div className="bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 p-4 rounded-2xl flex items-center gap-3">
               <span className="text-lg">🎉</span>
-              <div className="space-y-1">
-                <h4 className="text-xs font-serif text-emerald-400 font-bold">Тест успешно проверен автоматически!</h4>
-                <p className="text-[10px] text-white/50 leading-relaxed font-light">
-                  Все задания были проверены моментально. Ниже приведен детальный разбор твоих ответов, правильных ключей и правил-пояснений к каждому заданию.
-                </p>
-              </div>
+              <h4 className="text-xs font-serif text-emerald-400 font-bold">Тест проверен.</h4>
             </div>
 
             <div className="bg-[#12131a]/95 border border-white/5 rounded-2xl p-5 md:p-6 shadow-2xl space-y-5">
