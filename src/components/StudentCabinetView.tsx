@@ -279,15 +279,7 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
       assignedTests: updatedTestsList
     };
 
-    try {
-      // Sync to cloud
-      const docRef = doc(db, 'cabinets', cabinetId);
-      await setDoc(docRef, updatedCabinet, { merge: true });
-    } catch (e) {
-      console.error('Failed to update cabinet on cloud:', e);
-    }
-
-    // Save locally
+    // Save locally immediately
     const localCabs = localStorage.getItem('tutor_local_cabinets');
     if (localCabs) {
       try {
@@ -297,6 +289,7 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
       } catch {}
     }
 
+    // Update state instantly to close active test, stop timer, and show results
     setCabinet(updatedCabinet);
     setViewingResultsTest(updatedAssignedTest);
     setActiveTest(null);
@@ -306,6 +299,12 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
     setTimeout(() => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }, 100);
+
+    // Sync to cloud in the background without blocking the UI
+    const docRef = doc(db, 'cabinets', cabinetId);
+    setDoc(docRef, updatedCabinet, { merge: true }).catch((e) => {
+      console.error('Failed to update cabinet on cloud:', e);
+    });
   };
 
   // Visual Custom SVG line chart for Progress Curve
