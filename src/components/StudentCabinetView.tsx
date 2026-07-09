@@ -69,85 +69,22 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
     };
   }, [activeTest]);
 
-  // Real-time Firestore sync (Using HTTP API fallback for unauthenticated students)
+  // Real-time Firestore sync (Using HTTP API fallback for unauthenticated students and tutors with ISP/VPN blocks)
   useEffect(() => {
+    let isMounted = true;
+    let intervalId: any;
+    let unsubscribe: (() => void) | null = null;
+
     setLoading(true);
     setError(null);
 
-    if (teacherMode) {
-      // Tutor Mode - directly connect to Firestore for instant real-time sync
-      const docRef = doc(db, 'cabinets', cabinetId);
-      const unsubscribe = onSnapshot(docRef, (snapshot) => {
-        if (snapshot.exists()) {
-          setCabinet(snapshot.data() as StudentCabinet);
-        } else {
-          // Look in local storage as a guest fallback
-          const localData = localStorage.getItem('tutor_local_cabinets');
-          if (localData) {
-            try {
-              const parsed = JSON.parse(localData) as Record<string, StudentCabinet>;
-              if (parsed[cabinetId]) {
-                setCabinet(parsed[cabinetId]);
-                setLoading(false);
-                return;
-              }
-            } catch (e) {
-              console.error('Failed to parse local cabinets:', e);
-            }
-          }
-          setError('Кабинет не найден. Пожалуйста, обратитесь к вашему преподавателю за верной ссылкой!');
-        }
-        setLoading(false);
-      }, (err) => {
-        console.error('Error loading cabinet:', err);
-        // Fallback
-        const localData = localStorage.getItem('tutor_local_cabinets');
-        if (localData) {
-          try {
-            const parsed = JSON.parse(localData) as Record<string, StudentCabinet>;
-            if (parsed[cabinetId]) {
-              setCabinet(parsed[cabinetId]);
-              setLoading(false);
-              return;
-            }
-          } catch {}
-        }
-        setError('Ошибка при загрузке кабинета. Проверьте подключение к Интернету.');
-        setLoading(false);
-      });
-
-      return () => unsubscribe();
-    } else {
-      // Student Mode - use standard HTTP API to fetch cabinet data, bypassing Firestore gRPC/WebSocket ports entirely
-      let isMounted = true;
-      let intervalId: any;
-
-      const fetchCabinet = async (showLoading = false) => {
-        if (showLoading) setLoading(true);
-        try {
-          const res = await fetch(`/api/cabinet/${cabinetId}`);
-          if (res.status === 404) {
-            if (isMounted) {
-              setError('Кабинет не найден. Пожалуйста, убедитесь, что ссылка верна, или обратитесь к вашему преподавателю!');
-            }
-            return;
-          }
-          if (!res.ok) {
-            throw new Error(`HTTP error ${res.status}`);
-          }
-          const result = await res.json();
+    const fetchCabinet = async (showLoading = false) => {
+      if (showLoading) setLoading(true);
+      try {
+        const res = await fetch(`/api/cabinet/${cabinetId}`);
+        if (res.status === 404) {
           if (isMounted) {
-            if (result.success && result.data) {
-              setCabinet(result.data);
-              setError(null);
-            } else {
-              setError('Кабинет не найден. Обратитесь к вашему преподавателю за верной ссылкой!');
-            }
-          }
-        } catch (err) {
-          console.error('API error loading cabinet:', err);
-          if (isMounted) {
-            // LocalStorage fallback for offline capability
+            // Check local storage as a guest fallback
             const localData = localStorage.getItem('tutor_local_cabinets');
             if (localData) {
               try {
@@ -160,30 +97,79 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
                 }
               } catch {}
             }
-            if (showLoading) {
-              setError('Не удалось загрузить данные кабинета. Проверьте подключение к Интернету или обновите страницу.');
-            }
+            setError('Кабинет не найден. Пожалуйста, убедитесь, что ссылка верна, или обратитесь к вашему преподавателю!');
           }
-        } finally {
-          if (isMounted && showLoading) {
-            setLoading(false);
+          return;
+        }
+        if (!res.ok) {
+          throw new Error(`HTTP error ${res.status}`);
+        }
+        const result = await res.json();
+        if (isMounted) {
+          if (result.success && result.data) {
+            setCabinet(result.data);
+            setError(null);
+          } else {
+            setError('Кабинет не найден. Обратитесь к вашему преподавателю за верной ссылкой!');
           }
         }
-      };
+      } catch (err) {
+        console.error('API error loading cabinet:', err);
+        if (isMounted) {
+          // LocalStorage fallback for offline capability
+          const localData = localStorage.getItem('tutor_local_cabinets');
+          if (localData) {
+            try {
+              const parsed = JSON.parse(localData) as Record<string, StudentCabinet>;
+              if (parsed[cabinetId]) {
+                setCabinet(parsed[cabinetId]);
+                setError(null);
+                setLoading(false);
+                return;
+              }
+            } catch {}
+          }
+          if (showLoading) {
+            setError('Не удалось загрузить данные кабинета. Проверьте подключение к Интернету или обновите страницу.');
+          }
+        }
+      } finally {
+        if (isMounted && showLoading) {
+          setLoading(false);
+        }
+      }
+    };
 
-      // Initial HTTP load
-      fetchCabinet(true);
+    // Initial load via proxy API (100% immune to ISP blocks)
+    fetchCabinet(true);
 
-      // Lightweight polling every 12 seconds to detect newly assigned tests by tutor
-      intervalId = setInterval(() => {
-        fetchCabinet(false);
-      }, 12000);
-
-      return () => {
-        isMounted = false;
-        clearInterval(intervalId);
-      };
+    // If teacherMode is true, try to listen via Firestore snapshot for instant real-time updates.
+    // If it gets blocked or doesn't work, we already have the data from fetchCabinet!
+    if (teacherMode) {
+      try {
+        const docRef = doc(db, 'cabinets', cabinetId);
+        unsubscribe = onSnapshot(docRef, (snapshot) => {
+          if (isMounted && snapshot.exists()) {
+            setCabinet(snapshot.data() as StudentCabinet);
+          }
+        }, (err) => {
+          console.warn('Real-time snapshot sync failed or got blocked, falling back to polling:', err);
+        });
+      } catch (err) {
+        console.warn('Failed to initialize Firestore onSnapshot:', err);
+      }
     }
+
+    // Set up backup polling every 10 seconds for both student and teacher modes (to detect new tests or updates)
+    intervalId = setInterval(() => {
+      fetchCabinet(false);
+    }, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      if (unsubscribe) unsubscribe();
+    };
   }, [cabinetId, teacherMode]);
 
   if (loading) {
