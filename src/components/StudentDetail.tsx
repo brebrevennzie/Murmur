@@ -12,7 +12,8 @@ import {
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
   HelpCircle, PenTool, ClipboardList, TrendingUp, AlertCircle,
   Video, ExternalLink, Link, X, Trash, Maximize2, Minimize2, Paperclip,
-  UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon, Upload
+  UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon, Upload,
+  Eye
 } from 'lucide-react';
 import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS, StudentCabinet, TestTemplate, AssignedTest } from '../types';
 
@@ -46,6 +47,7 @@ interface StudentDetailProps {
   onUpdateCabinets?: (updatedCabs: Record<string, StudentCabinet>) => void;
   user?: any;
   testTemplates?: TestTemplate[];
+  onOpenCabinet?: (cabinetId: string) => void;
 }
 
 type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments' | 'cabinet';
@@ -87,7 +89,8 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
   onUpdateStudent, 
   onUpdateCabinets, 
   user,
-  testTemplates = []
+  testTemplates = [],
+  onOpenCabinet
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
@@ -3080,14 +3083,22 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                           </>
                         )}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenCabinet && onOpenCabinet(student.cabinetId!)}
+                        className="flex-1 sm:flex-initial px-4 py-2 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/20 text-[#F4B5CD] text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Войти в кабинет</span>
+                      </button>
                       <a
                         href={`${window.location.origin}${window.location.pathname}?cabinet=${student.cabinetId}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-4 py-2.5 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/15 text-[#F4B5CD] text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5"
+                        className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Открыть</span>
+                        <span>Открыть в новой вкладке</span>
                       </a>
                     </div>
                   </div>

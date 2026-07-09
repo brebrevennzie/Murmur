@@ -6,9 +6,10 @@ import { Check, X, AlertCircle, Sparkles, BookOpen, Clock, Activity, Calendar, A
 
 interface StudentCabinetViewProps {
   cabinetId: string;
+  onBack?: () => void;
 }
 
-export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetId }) => {
+export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetId, onBack }) => {
   const [cabinet, setCabinet] = useState<StudentCabinet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -365,6 +366,20 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
           </div>
 
           <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTest && !window.confirm('Вы действительно хотите выйти из просмотра кабинета?')) {
+                    return;
+                  }
+                  onBack();
+                }}
+                className="px-3.5 h-8 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD] transition rounded-lg text-[9px] uppercase tracking-wider font-bold flex items-center gap-1 cursor-pointer mr-2"
+              >
+                Панель репетитора
+              </button>
+            )}
             {activeTest || viewingResultsTest ? (
               <button
                 onClick={() => {

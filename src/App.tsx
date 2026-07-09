@@ -30,18 +30,48 @@ import { StudentCabinetView } from './components/StudentCabinetView';
 
 const getCabinetIdFromUrl = () => {
   if (typeof window === 'undefined') return null;
-  const params = new URLSearchParams(window.location.search);
-  const cab = params.get('cabinet') || params.get('cab');
+  
+  // 1. Try standard query params in window.location.search
+  const searchParams = new URLSearchParams(window.location.search);
+  let cab = searchParams.get('cabinet') || searchParams.get('cab');
   if (cab) return cab;
-  // Fallback to hash
+  
+  // 2. Try query params inside window.location.hash (e.g. #/?cabinet=cab-xxx)
   const hash = window.location.hash;
-  if (hash && hash.includes('cabinet=')) {
-    return hash.split('cabinet=')[1];
+  if (hash) {
+    const qIndex = hash.indexOf('?');
+    if (qIndex !== -1) {
+      const hashParams = new URLSearchParams(hash.substring(qIndex));
+      cab = hashParams.get('cabinet') || hashParams.get('cab');
+      if (cab) return cab;
+    }
+    
+    // Fallback: simple regex search for cabinet=... or cab=... in the hash
+    const match = hash.match(/[?&](cabinet|cab)=([^&]+)/) || hash.match(/#(cabinet|cab)=([^&]+)/);
+    if (match && match[2]) {
+      return match[2];
+    }
+    
+    // Secondary fallback: if hash is just cabinet ID or starts with it
+    if (hash.includes('cabinet=')) {
+      const part = hash.split('cabinet=')[1];
+      if (part) {
+        return part.split('&')[0];
+      }
+    }
+    if (hash.includes('cab=')) {
+      const part = hash.split('cab=')[1];
+      if (part) {
+        return part.split('&')[0];
+      }
+    }
   }
+  
   return null;
 };
 
 export default function App() {
+  const [viewingCabinetId, setViewingCabinetId] = useState<string | null>(null);
 
   const cabinetIdFromUrl = getCabinetIdFromUrl();
 
@@ -49,6 +79,14 @@ export default function App() {
     return (
       <ErrorBoundary>
         <StudentCabinetView cabinetId={cabinetIdFromUrl} />
+      </ErrorBoundary>
+    );
+  }
+
+  if (viewingCabinetId) {
+    return (
+      <ErrorBoundary>
+        <StudentCabinetView cabinetId={viewingCabinetId} onBack={() => setViewingCabinetId(null)} />
       </ErrorBoundary>
     );
   }
@@ -927,6 +965,7 @@ export default function App() {
             onUpdateCabinets={handleUpdateCabinets}
             user={user}
             testTemplates={testTemplates}
+            onOpenCabinet={setViewingCabinetId}
           />
           
           {/* Advanced Danger Option inside Cabinet detail */}
