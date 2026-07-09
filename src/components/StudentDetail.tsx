@@ -3201,9 +3201,27 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                               <h5 className="font-serif text-xs font-semibold text-white/90 line-clamp-2 font-medium">
                                 {test.title}
                               </h5>
-                              <p className="text-[8px] text-white/30 font-mono mt-1">
-                                Назначен: {new Date(test.assignedAt).toLocaleDateString()}
-                              </p>
+                              <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] text-white/35 font-mono mt-1">
+                                <span>Назначен: {new Date(test.assignedAt).toLocaleDateString()}</span>
+                                {isSolved && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-[#F4B5CD] font-bold">Балл: {test.score}/{test.totalQuestions}</span>
+                                    {test.timeSpent !== undefined && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-[#C3B4FC]">⏱️ {Math.floor(test.timeSpent / 60)}м {test.timeSpent % 60}с</span>
+                                      </>
+                                    )}
+                                    {test.tabSwitches !== undefined && (
+                                      <>
+                                        <span>•</span>
+                                        <span className={test.tabSwitches > 0 ? 'text-rose-400 font-extrabold' : 'text-emerald-400 font-bold'}>🚫 Сворачиваний: {test.tabSwitches}</span>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex gap-2 mt-4 pt-2.5 border-t border-white/5">
@@ -3265,6 +3283,26 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
               <p className="text-[10px] text-white/40 font-mono -mt-1">
                 Сдано: {viewingCabinetTest.submittedAt ? new Date(viewingCabinetTest.submittedAt).toLocaleString() : ''} • Результат: <strong className="text-[#F4B5CD] font-bold">{viewingCabinetTest.score} / {viewingCabinetTest.totalQuestions} правильных</strong>
               </p>
+
+              {/* Stats Strip */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl font-mono text-[10px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-white/45">⏱️ Время выполнения:</span>
+                  <span className="text-[#C3B4FC] font-bold">
+                    {viewingCabinetTest.timeSpent !== undefined ? (
+                      `${Math.floor(viewingCabinetTest.timeSpent / 60)} мин ${viewingCabinetTest.timeSpent % 60} сек`
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/45">🚫 Сворачиваний вкладки:</span>
+                  <span className={`font-bold ${viewingCabinetTest.tabSwitches && viewingCabinetTest.tabSwitches > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {viewingCabinetTest.tabSwitches !== undefined ? `${viewingCabinetTest.tabSwitches} раз` : '—'}
+                  </span>
+                </div>
+              </div>
 
               <div className="space-y-3.5 pt-2">
                 {viewingCabinetTest.questions.map((q, idx) => {

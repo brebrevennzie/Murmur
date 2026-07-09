@@ -23,6 +23,52 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
   const [wantToDiscuss, setWantToDiscuss] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Tracking and view mode states
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [tabSwitchesCount, setTabSwitchesCount] = useState(0);
+  const [teacherMode, setTeacherMode] = useState(!!onBack);
+
+  // Timer & Tab Switches Defocus Listener
+  useEffect(() => {
+    if (!activeTest) {
+      setElapsedSeconds(0);
+      setTabSwitchesCount(0);
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+
+    let lastDefocus = 0;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        const now = Date.now();
+        if (now - lastDefocus > 1500) {
+          setTabSwitchesCount(prev => prev + 1);
+          lastDefocus = now;
+        }
+      }
+    };
+
+    const handleWindowBlur = () => {
+      const now = Date.now();
+      if (now - lastDefocus > 1500) {
+        setTabSwitchesCount(prev => prev + 1);
+        lastDefocus = now;
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [activeTest]);
+
   // Real-time Firestore sync
   useEffect(() => {
     setLoading(true);
@@ -101,12 +147,44 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
   const pendingTests = assignedTests.filter(t => t.status === 'pending');
   const completedTests = assignedTests.filter(t => t.status === 'submitted');
 
+  // Extract all unique task numbers from completed tests for the progress table
+  const allTaskNumbers = React.useMemo(() => {
+    const numbers = new Set<string>();
+    completedTests.forEach(test => {
+      test.questions.forEach(q => {
+        const num = q.taskNumber || q.text || '';
+        if (num.trim()) {
+          numbers.add(num.trim());
+        }
+      });
+    });
+    return Array.from(numbers).sort((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [completedTests]);
+
+  const getCellStatus = (test: AssignedTest, taskNum: string) => {
+    const matchingQuestions = test.questions.filter(q => (q.taskNumber || q.text || '').trim() === taskNum);
+    if (matchingQuestions.length === 0) {
+      return 'none'; // прочерк
+    }
+    const allCorrect = matchingQuestions.every(q => test.checkedResults?.[q.id] === true);
+    return allCorrect ? 'correct' : 'incorrect';
+  };
+
   // Start solving a test
   const handleStartSolve = (test: AssignedTest) => {
     setActiveTest(test);
     setViewingResultsTest(null);
     setAnswers({});
     setWantToDiscuss({});
+    setElapsedSeconds(0);
+    setTabSwitchesCount(0);
   };
 
   // Answer selection handlers
@@ -190,7 +268,9 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
       wantToDiscuss,
       score,
       totalQuestions,
-      checkedResults
+      checkedResults,
+      timeSpent: elapsedSeconds,
+      tabSwitches: tabSwitchesCount
     };
 
     // Update cabinet list
@@ -226,6 +306,11 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
     setViewingResultsTest(updatedAssignedTest);
     setActiveTest(null);
     setSubmitting(false);
+
+    // Scroll back to top so results are instantly visible
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 100);
   };
 
   // Visual Custom SVG line chart for Progress Curve
@@ -247,11 +332,19 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
     const height = 180;
     const padding = 30;
 
+    const formatDateShort = (isoString?: string) => {
+      if (!isoString) return '';
+      const d = new Date(isoString);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return `${day}.${month}`;
+    };
+
     const points = sortedSubmitted.map((t, idx) => {
       const percentage = t.totalQuestions ? Math.round(((t.score || 0) / t.totalQuestions) * 100) : 0;
       const x = padding + (idx / (sortedSubmitted.length === 1 ? 1 : sortedSubmitted.length - 1)) * (width - padding * 2);
       const y = height - padding - (percentage / 100) * (height - padding * 2);
-      return { x, y, percentage, title: t.title, date: t.submittedAt ? t.submittedAt.substring(0, 10) : '' };
+      return { x, y, percentage, title: t.title, date: formatDateShort(t.submittedAt) };
     });
 
     // Create SVG Path line
@@ -289,6 +382,19 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
           <line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="rgba(255,255,255,0.05)" strokeDasharray="3" />
           <line x1={padding} y1={height / 2} x2={width - padding} y2={height / 2} stroke="rgba(255,255,255,0.05)" strokeDasharray="3" />
           <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="rgba(255,255,255,0.1)" />
+
+          {/* Vertical connectors from nodes to date labels */}
+          {points.map((p, idx) => (
+            <line
+              key={`v-conn-${idx}`}
+              x1={p.x}
+              y1={p.y}
+              x2={p.x}
+              y2={height - padding}
+              stroke="rgba(255,255,255,0.15)"
+              strokeDasharray="2 3"
+            />
+          ))}
 
           {/* Fill Area */}
           {sortedSubmitted.length > 1 && (
@@ -339,7 +445,7 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
                 x={p.x}
                 y={height - 8}
                 textAnchor="middle"
-                className="text-[8px] font-mono fill-white/30"
+                className="text-[9px] font-mono font-bold fill-white/70"
               >
                 {p.date}
               </text>
@@ -366,6 +472,32 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
           </div>
 
           <div className="flex items-center gap-2">
+            {onBack && (
+              <div className="flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-xl mr-2">
+                <button
+                  type="button"
+                  onClick={() => setTeacherMode(false)}
+                  className={`px-3 py-1.5 rounded-lg text-[9px] uppercase tracking-wider font-bold transition cursor-pointer ${
+                    !teacherMode
+                      ? 'bg-[#F4B5CD] text-[#12131a]'
+                      : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  Ученик
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherMode(true)}
+                  className={`px-3 py-1.5 rounded-lg text-[9px] uppercase tracking-wider font-bold transition cursor-pointer flex items-center gap-1 ${
+                    teacherMode
+                      ? 'bg-[#C3B4FC] text-[#12131a]'
+                      : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  👑 Учитель
+                </button>
+              </div>
+            )}
             {onBack && (
               <button
                 type="button"
@@ -422,6 +554,31 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
                 <div className="text-right shrink-0">
                   <p className="text-[9px] uppercase tracking-widest text-white/30">Вопросов</p>
                   <p className="text-xs font-mono font-bold text-white/80">{activeTest.questions.length} заданий</p>
+                </div>
+              </div>
+
+              {/* Real-time Anti-Cheating & Time Tracking Panel */}
+              <div className="mb-6 p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <div>
+                    <span className="text-[10px] text-[#F4B5CD]/90 uppercase tracking-widest font-extrabold block">Режим контроля</span>
+                    <span className="text-[9px] text-white/30 font-mono">Сворачивания вкладки фиксируются</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-5 font-mono text-[11px] self-end sm:self-auto">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white/40">⏱️ Время:</span>
+                    <span className="text-[#C3B4FC] font-extrabold text-xs">
+                      {Math.floor(elapsedSeconds / 60).toString().padStart(2, '0')}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white/40">🚫 Сворачиваний:</span>
+                    <span className={`font-extrabold text-xs transition-colors ${tabSwitchesCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {tabSwitchesCount}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -546,7 +703,18 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
           </div>
         ) : viewingResultsTest ? (
           /* TEST RESULTS ANALYSIS / ERROR VIEW */
-          <div className="max-w-3xl mx-auto space-y-6">
+          <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
+            {/* Success Banner */}
+            <div className="bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 p-4 rounded-2xl flex items-start gap-3">
+              <span className="text-lg">🎉</span>
+              <div className="space-y-1">
+                <h4 className="text-xs font-serif text-emerald-400 font-bold">Тест успешно проверен автоматически!</h4>
+                <p className="text-[10px] text-white/50 leading-relaxed font-light">
+                  Все задания были проверены моментально. Ниже приведен детальный разбор твоих ответов, правильных ключей и правил-пояснений к каждому заданию.
+                </p>
+              </div>
+            </div>
+
             <div className="bg-[#12131a]/95 border border-white/5 rounded-2xl p-5 md:p-6 shadow-2xl space-y-5">
               
               {/* Score header box */}
@@ -572,6 +740,26 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
                   <p className="text-[9px] text-white/30 font-mono mt-0.5">
                     {viewingResultsTest.totalQuestions ? Math.round(((viewingResultsTest.score || 0) / viewingResultsTest.totalQuestions) * 100) : 0}% баллов
                   </p>
+                </div>
+              </div>
+
+              {/* Submission metadata strip (Time Spent and Tab defocus tracking) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-white/[0.02] border border-white/5 rounded-2xl font-mono text-[11px]">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-white/45">⏱️ Время решения:</span>
+                  <span className="text-[#C3B4FC] font-extrabold">
+                    {viewingResultsTest.timeSpent !== undefined ? (
+                      `${Math.floor(viewingResultsTest.timeSpent / 60)} мин ${viewingResultsTest.timeSpent % 60} сек`
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-2 sm:pt-0">
+                  <span className="text-white/45">🚫 Сворачиваний вкладки (контроль):</span>
+                  <span className={`font-extrabold ${viewingResultsTest.tabSwitches && viewingResultsTest.tabSwitches > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {viewingResultsTest.tabSwitches !== undefined ? `${viewingResultsTest.tabSwitches} раз` : '—'}
+                  </span>
                 </div>
               </div>
 
@@ -811,9 +999,25 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
                               <h4 className="font-serif text-xs text-white/85 truncate leading-snug">
                                 {test.title}
                               </h4>
-                              <p className="text-[9px] text-white/30 mt-1 font-mono">
-                                Сдано: {test.submittedAt ? new Date(test.submittedAt).toLocaleDateString() : ''} • {test.totalQuestions} зад.
-                              </p>
+                              <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] text-white/30 mt-1 font-mono">
+                                <span>Сдано: {test.submittedAt ? new Date(test.submittedAt).toLocaleDateString() : ''}</span>
+                                <span>•</span>
+                                <span>{test.totalQuestions} заданий</span>
+                                {test.timeSpent !== undefined && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-[#C3B4FC]">⏱️ {Math.floor(test.timeSpent / 60)}м {test.timeSpent % 60}с</span>
+                                  </>
+                                )}
+                                {test.tabSwitches !== undefined && (
+                                  <>
+                                    <span>•</span>
+                                    <span className={test.tabSwitches > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
+                                      🚫 {test.tabSwitches} {test.tabSwitches === 1 ? 'сворачивание' : test.tabSwitches > 1 && test.tabSwitches < 5 ? 'сворачивания' : 'сворачиваний'}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex items-center gap-3 shrink-0">
@@ -855,34 +1059,65 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
                   {renderProgressCurve()}
                 </div>
 
-                {/* Performance table / metrics */}
-                <div className="bg-[#12131a]/60 border border-white/5 p-4 rounded-2xl shadow-xl space-y-3 backdrop-blur-md">
-                  <span className="text-[9px] uppercase tracking-widest font-bold text-white/40 block pb-1 border-b border-white/5">
-                    Сводка результатов
-                  </span>
+                {/* Performance table / metrics (Redesigned as requested: Dates on top, Task numbers on the left) */}
+                <div className="bg-[#12131a]/80 border border-white/5 p-5 rounded-2xl shadow-xl space-y-4 backdrop-blur-md">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                    <span className="text-[10px] font-sans uppercase text-[#C3B4FC]/90 tracking-widest font-extrabold flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5" /> Таблица прогресса по заданиям
+                    </span>
+                  </div>
 
                   {completedTests.length === 0 ? (
-                    <p className="text-[10px] text-white/35 italic py-2">Сводка будет доступна после сдачи первого теста.</p>
+                    <p className="text-[10px] text-white/35 italic py-2">Таблица будет доступна после сдачи первого теста.</p>
                   ) : (
-                    <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
-                      <table className="w-full text-left border-collapse">
+                    <div className="w-full overflow-x-auto custom-scrollbar pt-1">
+                      <table className="w-full text-center border-collapse">
                         <thead>
-                          <tr className="border-b border-white/5 text-[8px] font-bold text-white/30 uppercase tracking-wider">
-                            <th className="py-2 font-semibold">Дата</th>
-                            <th className="py-2 font-semibold">Вариант</th>
-                            <th className="py-2 text-right font-semibold">Балл</th>
+                          <tr className="border-b border-white/10 text-[9px] font-bold text-white/40 uppercase tracking-wider">
+                            <th className="py-2.5 px-2 text-left font-semibold sticky left-0 bg-[#12131a] z-10 min-w-[70px]">Задание</th>
+                            {completedTests.map(test => {
+                              const dateFormatted = test.submittedAt 
+                                ? new Date(test.submittedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) 
+                                : '';
+                              return (
+                                <th key={test.id} className="py-2.5 px-2 font-mono text-[9px] text-white/60 font-medium min-w-[55px]">
+                                  <div className="flex flex-col items-center">
+                                    <span className="text-white/80 font-bold">{dateFormatted}</span>
+                                    <span className="text-[7px] text-white/30 truncate max-w-[45px] mt-0.5" title={test.title}>
+                                      {test.title}
+                                    </span>
+                                  </div>
+                                </th>
+                              );
+                            })}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5 text-[10px]">
-                          {completedTests.map(test => (
-                            <tr key={test.id} className="text-white/70 hover:text-white transition">
-                              <td className="py-2 font-mono text-white/40">
-                                {test.submittedAt ? test.submittedAt.substring(5, 10).replace('-', '.') : ''}
+                        <tbody className="divide-y divide-white/5 text-[11px]">
+                          {allTaskNumbers.map(taskNum => (
+                            <tr key={taskNum} className="hover:bg-white/[0.02] transition">
+                              <td className="py-2.5 px-2 text-left font-mono font-bold text-white/60 sticky left-0 bg-[#12131a]/95 z-10 border-r border-white/5">
+                                № {taskNum}
                               </td>
-                              <td className="py-2 truncate max-w-[120px] pr-2 font-light">{test.title}</td>
-                              <td className="py-2 text-right font-mono font-semibold text-[#F4B5CD]">
-                                {test.score}/{test.totalQuestions}
-                              </td>
+                              {completedTests.map(test => {
+                                const status = getCellStatus(test, taskNum);
+                                return (
+                                  <td key={test.id} className="py-2.5 px-2 font-mono text-center">
+                                    {status === 'correct' ? (
+                                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/10 text-xs" title={`${test.title}: Верно`}>
+                                        +
+                                      </span>
+                                    ) : status === 'incorrect' ? (
+                                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-500/10 text-rose-400 font-bold border border-rose-500/10 text-xs" title={`${test.title}: Ошибка`}>
+                                        −
+                                      </span>
+                                    ) : (
+                                      <span className="text-white/25 text-xs font-light" title={`${test.title}: Не было в тесте`}>
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              })}
                             </tr>
                           ))}
                         </tbody>
