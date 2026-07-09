@@ -316,6 +316,25 @@ export default function App() {
 
     try {
       for (const [cabId, cab] of Object.entries(updatedCabs)) {
+        // 1. First sync through our backend API which runs server-side (immune to ISP/VPN blocks)
+        await fetch('/api/submit-test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            cabinetId: cabId,
+            cabinetData: cab
+          })
+        }).then(async (res) => {
+          if (!res.ok) {
+            console.warn(`Backend API sync returned non-OK status: ${res.status}`);
+          }
+        }).catch((e) => {
+          console.error('Failed to sync cabinet via Backend API, trying direct Firestore client-side:', e);
+        });
+
+        // 2. Secondary/fallback sync via direct Firestore client-side SDK
         const docRef = doc(db, 'cabinets', cabId);
         await setDoc(docRef, cab, { merge: true });
       }

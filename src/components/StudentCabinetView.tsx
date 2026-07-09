@@ -126,6 +126,12 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
         if (showLoading) setLoading(true);
         try {
           const res = await fetch(`/api/cabinet/${cabinetId}`);
+          if (res.status === 404) {
+            if (isMounted) {
+              setError('Кабинет не найден. Пожалуйста, убедитесь, что ссылка верна, или обратитесь к вашему преподавателю!');
+            }
+            return;
+          }
           if (!res.ok) {
             throw new Error(`HTTP error ${res.status}`);
           }
@@ -155,7 +161,7 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
               } catch {}
             }
             if (showLoading) {
-              setError('Не удалось загрузить данные кабинета. Проверьте подключение к Интернету.');
+              setError('Не удалось загрузить данные кабинета. Проверьте подключение к Интернету или обновите страницу.');
             }
           }
         } finally {
@@ -364,25 +370,25 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
     }, 100);
 
     // Sync to cloud in the background without blocking the UI
-    if (!teacherMode) {
-      // Student Mode - Save results through our standard API route
-      fetch('/api/submit-test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          cabinetId,
-          cabinetData: updatedCabinet
-        })
-      }).catch((e) => {
-        console.error('Failed to update cabinet on cloud via API:', e);
-      });
-    } else {
-      // Teacher Mode - Save directly using Firestore client SDK
+    // We try to save via the API route first (highly robust, bypassing VPN/ISP blocks)
+    fetch('/api/submit-test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        cabinetId,
+        cabinetData: updatedCabinet
+      })
+    }).catch((e) => {
+      console.error('Failed to update cabinet on cloud via API:', e);
+    });
+
+    // If in teacher/tutor mode, also try direct Firestore save as a backup
+    if (teacherMode) {
       const docRef = doc(db, 'cabinets', cabinetId);
       setDoc(docRef, updatedCabinet, { merge: true }).catch((e) => {
-        console.error('Failed to update cabinet on cloud:', e);
+        console.error('Failed to update cabinet on cloud directly:', e);
       });
     }
   };
