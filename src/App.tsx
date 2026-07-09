@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SyllabusProgram, CalendarReminder, StudentCabinet } from './types';
+import { Student, SyllabusProgram, CalendarReminder, StudentCabinet, MockExam, TestTemplate } from './types';
 import { getInitialStudents, saveStudents, INITIAL_STUDENTS, getInitialPrograms, savePrograms } from './data';
 import { syncAllStudents } from './utils/paymentSync';
 import { safeStorage } from './utils/safeStorage';
@@ -17,24 +17,38 @@ import {
   Plus, GraduationCap, Grid, SlidersHorizontal, 
   HelpCircle, RefreshCw, AlertCircle, BookOpen, Layers,
   Calendar, FileText, Cloud, CloudOff, Award, ClipboardList,
-  ChevronLeft, ChevronRight, X, Trash2, ArrowUp, Sparkles, Moon
+  ChevronLeft, ChevronRight, X, Trash2, ArrowUp, Sparkles, Moon,
+  Home, Eye
 } from 'lucide-react';
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { PassMockModal } from './components/PassMockModal';
+import { WaterTracker } from './components/WaterTracker';
+import { UsefulLinks } from './components/UsefulLinks';
+import { TestLibrary } from './components/TestLibrary';
 import { StudentCabinetView } from './components/StudentCabinetView';
-import { TestsManager } from './components/TestsManager';
+
+const getCabinetIdFromUrl = () => {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const cab = params.get('cabinet') || params.get('cab');
+  if (cab) return cab;
+  // Fallback to hash
+  const hash = window.location.hash;
+  if (hash && hash.includes('cabinet=')) {
+    return hash.split('cabinet=')[1];
+  }
+  return null;
+};
 
 export default function App() {
-  // Direct student cabinet rendering from URL params (completely decouples student from Firebase)
-  const queryParams = new URLSearchParams(window.location.search);
-  const rawCabinetId = queryParams.get('cabinet') || queryParams.get('cabinetId');
-  const cabinetId = rawCabinetId ? rawCabinetId.trim() : null;
-  const cabinetData = queryParams.get('cabinet_data');
 
-  if (cabinetId || cabinetData) {
+  const cabinetIdFromUrl = getCabinetIdFromUrl();
+
+  if (cabinetIdFromUrl) {
     return (
-      <ErrorBoundary fallbackTitle="Ошибка отображения кабинета ученика">
-        <StudentCabinetView cabinetId={cabinetId} cabinetData={cabinetData} />
+      <ErrorBoundary>
+        <StudentCabinetView cabinetId={cabinetIdFromUrl} />
       </ErrorBoundary>
     );
   }
@@ -42,7 +56,7 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tests'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'links' | 'tests'>('dashboard');
 
   // Dynamic Theme (gothic or cosmic)
   const [theme, setTheme] = useState<'gothic' | 'cosmic'>(() => {
@@ -147,6 +161,7 @@ export default function App() {
   const [showProgramManager, setShowProgramManager] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isReminderDismissed, setIsReminderDismissed] = useState(false);
+  const [passMockStudentId, setPassMockStudentId] = useState<string | null>(null);
 
   const [customConfirm, setCustomConfirm] = useState<{
     title: string;
@@ -287,6 +302,114 @@ export default function App() {
     }
   };
 
+  // Test templates state
+  const [testTemplates, setTestTemplates] = useState<TestTemplate[]>(() => {
+    const stored = safeStorage.getItem('tutor_local_test_templates');
+    try {
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Real-time listener for test templates in Firestore
+  useEffect(() => {
+    if (user) {
+      const q = query(collection(db, 'test_templates'), where('tutorId', '==', user.uid));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const dbTemplates: TestTemplate[] = [];
+        snapshot.forEach((doc) => {
+          dbTemplates.push({ id: doc.id, ...doc.data() } as TestTemplate);
+        });
+        setTestTemplates(dbTemplates);
+        safeStorage.setItem('tutor_local_test_templates', JSON.stringify(dbTemplates));
+      }, (error) => {
+        console.error('Error listening to templates in Firestore:', error);
+      });
+      return unsubscribe;
+    }
+  }, [user]);
+
+  // Handler to update/save test templates
+  const handleSaveTestTemplate = async (template: TestTemplate) => {
+    const exists = testTemplates.some(t => t.id === template.id);
+    const updated = exists
+      ? testTemplates.map(t => t.id === template.id ? template : t)
+      : [template, ...testTemplates];
+
+    setTestTemplates(updated);
+    safeStorage.setItem('tutor_local_test_templates', JSON.stringify(updated));
+
+    if (user) {
+      try {
+        const docRef = doc(db, 'test_templates', template.id);
+        await setDoc(docRef, { ...template, tutorId: user.uid }, { merge: true });
+      } catch (err) {
+        console.error('Failed to sync template to Firestore:', err);
+      }
+    }
+  };
+
+  // Handler to delete test template
+  const handleDeleteTestTemplate = async (templateId: string) => {
+    const updated = testTemplates.filter(t => t.id !== templateId);
+    setTestTemplates(updated);
+    safeStorage.setItem('tutor_local_test_templates', JSON.stringify(updated));
+
+    if (user) {
+      try {
+        const { deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'test_templates', templateId));
+      } catch (err) {
+        console.error('Failed to delete template from Firestore:', err);
+      }
+    }
+  };
+
+  // Auto cabinet checking for Russian subject students
+  const [hasAutoCheckedCabinets, setHasAutoCheckedCabinets] = useState(false);
+
+  useEffect(() => {
+    if (hasAutoCheckedCabinets || students.length === 0) return;
+    
+    let studentsUpdated = false;
+    const updatedStudents = [...students];
+    const updatedCabs = { ...cabinets };
+    let cabsUpdated = false;
+
+    updatedStudents.forEach((student, index) => {
+      const isRussian = student.isActive && (student.subject || '').toLowerCase().includes('рус');
+      if (isRussian) {
+        let cabId = student.cabinetId;
+        const cabExists = cabId && cabinets[cabId];
+        if (!cabExists) {
+          if (!cabId) {
+            cabId = `cab-${Math.random().toString(36).substring(2, 11)}`;
+            updatedStudents[index] = { ...student, cabinetId: cabId };
+            studentsUpdated = true;
+          }
+          updatedCabs[cabId] = {
+            id: cabId,
+            studentId: student.id,
+            studentName: student.name,
+            tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
+            createdAt: new Date().toISOString(),
+            assignedTests: []
+          };
+          cabsUpdated = true;
+        }
+      }
+    });
+
+    if (studentsUpdated) {
+      handleUpdateStudents(updatedStudents);
+    }
+    if (cabsUpdated) {
+      handleUpdateCabinets(updatedCabs);
+    }
+    setHasAutoCheckedCabinets(true);
+  }, [students, cabinets, user, hasAutoCheckedCabinets]);
+
   // Migrate guest cabinets to logged-in user if any exist locally
   useEffect(() => {
     if (user) {
@@ -344,15 +467,65 @@ export default function App() {
 
   // Add individual student
   const handleAddStudent = (newStudent: Student) => {
-    const updated = [...students, newStudent];
+    let studentToCreate = { ...newStudent };
+    const isRussian = studentToCreate.isActive && (studentToCreate.subject || '').toLowerCase().includes('рус');
+    if (isRussian) {
+      const cabId = studentToCreate.cabinetId || `cab-${Math.random().toString(36).substring(2, 11)}`;
+      studentToCreate.cabinetId = cabId;
+      const newCabinet: StudentCabinet = {
+        id: cabId,
+        studentId: studentToCreate.id,
+        studentName: studentToCreate.name,
+        tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
+        createdAt: new Date().toISOString(),
+        assignedTests: []
+      };
+      // Immediately save the cabinet too
+      const updatedCabs = { ...cabinets, [cabId]: newCabinet };
+      handleUpdateCabinets(updatedCabs);
+    }
+    const updated = [...students, studentToCreate];
     handleUpdateStudents(updated);
     setShowAddModal(false);
+    setHasAutoCheckedCabinets(false);
   };
 
   // Update specific student (when edited in their cabinet)
   const handleUpdateStudent = (updatedStudent: Student) => {
-    const updated = students.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+    let studentToUpdate = { ...updatedStudent };
+    const isRussian = studentToUpdate.isActive && (studentToUpdate.subject || '').toLowerCase().includes('рус');
+    if (isRussian && !studentToUpdate.cabinetId) {
+      const cabId = `cab-${Math.random().toString(36).substring(2, 11)}`;
+      studentToUpdate.cabinetId = cabId;
+      const newCabinet: StudentCabinet = {
+        id: cabId,
+        studentId: studentToUpdate.id,
+        studentName: studentToUpdate.name,
+        tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
+        createdAt: new Date().toISOString(),
+        assignedTests: []
+      };
+      const updatedCabs = { ...cabinets, [cabId]: newCabinet };
+      handleUpdateCabinets(updatedCabs);
+    }
+    const updated = students.map(s => s.id === studentToUpdate.id ? studentToUpdate : s);
     handleUpdateStudents(updated);
+    setHasAutoCheckedCabinets(false);
+  };
+
+  // Save mock from modal
+  const handleSaveMockFromModal = (mock: MockExam) => {
+    if (!passMockStudentId) return;
+    const student = students.find(s => s.id === passMockStudentId);
+    if (!student) return;
+
+    const updatedStudent: Student = {
+      ...student,
+      mockExams: [...(student.mockExams || []), mock]
+    };
+
+    handleUpdateStudent(updatedStudent);
+    setPassMockStudentId(null);
   };
 
   // Completely delete student cabinet
@@ -638,27 +811,47 @@ export default function App() {
                 setSelectedStudentId(null);
                 setFilterDebtOnly(false);
               }}
-              className={`cursor-pointer transition duration-200 pb-0.5 ${
+              className={`cursor-pointer transition duration-200 pb-1 flex items-center justify-center ${
                 activeTab === 'dashboard' && !selectedStudentId && !filterDebtOnly
                   ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
                   : 'text-white/40 hover:text-white'
               }`}
+              title="Рабочий стол"
             >
-              Рабочий стол
+              <Home className="w-4 h-4 text-[#F4B5CD]" />
             </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('links');
+                setSelectedStudentId(null);
+                setFilterDebtOnly(false);
+              }}
+              className={`cursor-pointer transition duration-200 pb-1 flex items-center gap-0.5 ${
+                activeTab === 'links' && !selectedStudentId
+                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
+                  : 'text-white/40 hover:text-white'
+              }`}
+              title="Полезные ссылки"
+            >
+              <Eye className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <Eye className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            </button>
+
             <button
               onClick={() => {
                 setActiveTab('tests');
                 setSelectedStudentId(null);
                 setFilterDebtOnly(false);
               }}
-              className={`cursor-pointer transition duration-200 pb-0.5 ${
+              className={`cursor-pointer transition duration-200 pb-1 flex items-center justify-center ${
                 activeTab === 'tests' && !selectedStudentId
                   ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
                   : 'text-white/40 hover:text-white'
               }`}
+              title="Тесты и Варианты"
             >
-              Кабинеты & Тесты
+              <ClipboardList className="w-4 h-4 text-purple-400 shrink-0" />
             </button>
           </div>
         </div>
@@ -733,6 +926,7 @@ export default function App() {
             onUpdateStudent={handleUpdateStudent}
             onUpdateCabinets={handleUpdateCabinets}
             user={user}
+            testTemplates={testTemplates}
           />
           
           {/* Advanced Danger Option inside Cabinet detail */}
@@ -751,14 +945,23 @@ export default function App() {
             </div>
           </div>
         </div>
+      ) : activeTab === 'links' ? (
+        <div className="animate-fadeIn opacity-90 text-white/85 py-6">
+          <UsefulLinks />
+        </div>
       ) : activeTab === 'tests' ? (
-        <TestsManager 
-          students={students} 
-          onUpdateStudents={handleUpdateStudents} 
-          user={user} 
-          cabinets={cabinets}
-          onUpdateCabinets={handleUpdateCabinets}
-        />
+        <div className="animate-fadeIn opacity-90 text-white/85 py-6">
+          <TestLibrary
+            templates={testTemplates}
+            onSaveTemplate={handleSaveTestTemplate}
+            onDeleteTemplate={handleDeleteTestTemplate}
+            students={students}
+            cabinets={cabinets}
+            onUpdateCabinets={handleUpdateCabinets}
+            onUpdateStudent={handleUpdateStudent}
+            user={user}
+          />
+        </div>
       ) : (
         /* Home Workspace view */
         <div className="animate-fadeIn opacity-90 text-white/85">
@@ -883,43 +1086,48 @@ export default function App() {
 
               </div>
 
-              {/* Right Column: Fast actions */}
-              <div className="lg:col-span-4 flex flex-col justify-between gap-3">
-                <div className="flex items-center gap-2 text-[10px] md:text-xs font-sans uppercase text-white/50 tracking-wider">
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-[#C3B4FC]" />
-                  <span>Быстрые действия</span>
+              {/* Right Column: Fast actions & Water Tracker */}
+              <div className="lg:col-span-4 flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-[10px] md:text-xs font-sans uppercase text-white/50 tracking-wider">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-[#C3B4FC]" />
+                    <span>Быстрые действия</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 bg-gradient-to-br from-[#12131a]/80 to-[#F4B5CD]/[0.05] p-3 rounded-2xl border border-white/5 shadow-xl">
+                    <button
+                      onClick={() => setShowGradingModal(true)}
+                      className="py-1.5 px-3 bg-[#C3B4FC]/5 hover:bg-[#C3B4FC]/15 border border-[#C3B4FC]/15 hover:border-[#C3B4FC]/30 text-[#C3B4FC] text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center min-h-[38px]"
+                    >
+                      <Award className="w-3.5 h-3.5 text-[#C3B4FC]/80 shrink-0" />
+                      <span>Баллы</span>
+                    </button>
+                    <button
+                      onClick={() => setShowProgramManager(true)}
+                      className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-[#F4B5CD]/20 text-[#F4B5CD]/80 text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center min-h-[38px]"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-[#F4B5CD]/70 shrink-0" />
+                      <span>КТП</span>
+                    </button>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 text-white/70 text-[10px] uppercase font-bold tracking-wider rounded-lg transition duration-200 flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center min-h-[38px]"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                      <span>Расписание</span>
+                    </button>
+                    <button
+                      onClick={() => setShowAddModal(true)}
+                      className="py-1.5 px-3 bg-[#F4B5CD]/5 hover:bg-[#F4B5CD]/15 border border-[#F4B5CD]/10 hover:border-[#F4B5CD]/30 text-[#F4B5CD] text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center min-h-[38px]"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-[#F4B5CD]/70 shrink-0" />
+                      <span>Новый ученик</span>
+                    </button>
+                  </div>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-2 flex-1 items-stretch bg-gradient-to-br from-[#12131a]/80 to-[#F4B5CD]/[0.05] p-3.5 rounded-2xl border border-white/5 shadow-xl">
-                  <button
-                    onClick={() => setShowGradingModal(true)}
-                    className="py-1.5 px-3 bg-[#C3B4FC]/5 hover:bg-[#C3B4FC]/15 border border-[#C3B4FC]/15 hover:border-[#C3B4FC]/30 text-[#C3B4FC] text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
-                  >
-                    <Award className="w-3.5 h-3.5 text-[#C3B4FC]/80 shrink-0" />
-                    <span>Баллы</span>
-                  </button>
-                  <button
-                    onClick={() => setShowProgramManager(true)}
-                    className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-[#F4B5CD]/20 text-[#F4B5CD]/80 text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-[#F4B5CD]/70 shrink-0" />
-                    <span>КТП</span>
-                  </button>
-                  <button
-                    onClick={() => setShowImportModal(true)}
-                    className="py-1.5 px-3 bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 text-white/70 text-[10px] uppercase font-bold tracking-wider rounded-lg transition duration-200 flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
-                  >
-                    <Calendar className="w-3.5 h-3.5 text-white/50 shrink-0" />
-                    <span>Расписание</span>
-                  </button>
-                  <button
-                    onClick={() => setShowAddModal(true)}
-                    className="py-1.5 px-3 bg-[#F4B5CD]/5 hover:bg-[#F4B5CD]/15 border border-[#F4B5CD]/10 hover:border-[#F4B5CD]/30 text-[#F4B5CD] text-[10px] uppercase font-bold tracking-wider transition duration-200 rounded-lg flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-[0.98] shadow-sm justify-center"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-[#F4B5CD]/70 shrink-0" />
-                    <span>Новый ученик</span>
-                  </button>
-                </div>
+
+                {/* Water Tracker */}
+                <WaterTracker />
               </div>
 
             </div>
@@ -1162,6 +1370,7 @@ export default function App() {
                       student={student}
                       cabinet={student.cabinetId ? cabinets[student.cabinetId] : null}
                       onSelect={() => setSelectedStudentId(student.id)}
+                      onPassMock={() => setPassMockStudentId(student.id)}
                     />
                   ))}
                 </div>
@@ -1531,6 +1740,19 @@ export default function App() {
             <X className="w-4 h-4" />
           </button>
         </div>
+      )}
+
+      {passMockStudentId && (
+        (() => {
+          const student = students.find(s => s.id === passMockStudentId);
+          return student ? (
+            <PassMockModal
+              student={student}
+              onClose={() => setPassMockStudentId(null)}
+              onSave={handleSaveMockFromModal}
+            />
+          ) : null;
+        })()
       )}
 
       {showScrollTop && !selectedStudentId && (

@@ -4,7 +4,6 @@ import { ParentReportModal } from './ParentReportModal';
 import { PaymentReportModal } from './PaymentReportModal';
 import { parseRawKtpText, normalizeScheduleText } from '../utils/scheduleParser';
 import { safeStorage } from '../utils/safeStorage';
-import { encodeData, toCompact } from '../utils/codec';
 import { copyToClipboard } from '../utils/clipboard';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -13,7 +12,7 @@ import {
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
   HelpCircle, PenTool, ClipboardList, TrendingUp, AlertCircle,
   Video, ExternalLink, Link, X, Trash, Maximize2, Minimize2, Paperclip,
-  UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon
+  UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon, Upload
 } from 'lucide-react';
 import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS, StudentCabinet, TestTemplate, AssignedTest } from '../types';
 
@@ -46,9 +45,10 @@ interface StudentDetailProps {
   onUpdateStudent: (updatedStudent: Student) => void;
   onUpdateCabinets?: (updatedCabs: Record<string, StudentCabinet>) => void;
   user?: any;
+  testTemplates?: TestTemplate[];
 }
 
-type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments' | 'cabinet_tests';
+type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments' | 'cabinet';
 
 const formatDateToDDMMYY = (dateStr: string): string => {
   if (!dateStr) return '';
@@ -86,113 +86,18 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
   onBack, 
   onUpdateStudent, 
   onUpdateCabinets, 
-  user 
+  user,
+  testTemplates = []
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
-  const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
   const [showParentReport, setShowParentReport] = useState(false);
   const [showPaymentReport, setShowPaymentReport] = useState(false);
 
-  // Load templates inside StudentDetail for direct test issuing
-  const [templates] = useState<TestTemplate[]>(() => {
-    const stored = safeStorage.getItem('tutor_test_templates');
-    try {
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [showAssignModal, setShowAssignModal] = useState(false);
-
-  const handleCreateCabinetLocally = () => {
-    const cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
-    const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
-    
-    const newCabinet: StudentCabinet = {
-      id: cabinetId,
-      studentId: student.id,
-      studentName: student.name,
-      tutorId: activeTutorId,
-      createdAt: new Date().toISOString(),
-      assignedTests: []
-    };
-    
-    // Update student
-    onUpdateStudent({ ...student, cabinetId });
-    
-    // Update cabinets
-    if (onUpdateCabinets) {
-      onUpdateCabinets({ ...cabinets, [cabinetId]: newCabinet });
-    }
-    
-    alert('Личный кабинет успешно создан!');
-  };
-
-  const handleAssignTestDirectly = (template: TestTemplate) => {
-    let cabinetId = student.cabinetId;
-    let currentCabinets = { ...cabinets };
-    
-    if (!cabinetId) {
-      cabinetId = `cab_${Math.random().toString(36).substring(2, 11)}`;
-      const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
-      
-      const newCabinet: StudentCabinet = {
-        id: cabinetId,
-        studentId: student.id,
-        studentName: student.name,
-        tutorId: activeTutorId,
-        createdAt: new Date().toISOString(),
-        assignedTests: []
-      };
-      
-      currentCabinets[cabinetId] = newCabinet;
-      onUpdateStudent({ ...student, cabinetId });
-    }
-    
-    let currentCabinet = currentCabinets[cabinetId];
-    if (!currentCabinet) {
-      const activeTutorId = user ? user.uid : (localStorage.getItem('guest_tutor_id') || `guest_${Math.random().toString(36).substring(2, 11)}`);
-      currentCabinet = {
-        id: cabinetId,
-        studentId: student.id,
-        studentName: student.name,
-        tutorId: activeTutorId,
-        createdAt: new Date().toISOString(),
-        assignedTests: []
-      };
-      currentCabinets[cabinetId] = currentCabinet;
-    }
-    
-    // Check if already assigned
-    const isAlreadyAssigned = (currentCabinet.assignedTests || []).some(t => t.templateId === template.id);
-    if (isAlreadyAssigned) {
-      alert(`Тест "${template.title}" уже назначен этому ученику.`);
-      return;
-    }
-    
-    const newAssignedTest: AssignedTest = {
-      id: `asg_${Math.random().toString(36).substring(2, 11)}`,
-      templateId: template.id,
-      title: template.title,
-      type: template.type,
-      questions: template.questions.map(q => ({ ...q })),
-      status: 'pending',
-      assignedAt: new Date().toISOString()
-    };
-    
-    const updatedCabinet: StudentCabinet = {
-      ...currentCabinet,
-      assignedTests: [newAssignedTest, ...(currentCabinet.assignedTests || [])]
-    };
-    
-    if (onUpdateCabinets) {
-      onUpdateCabinets({ ...currentCabinets, [cabinetId]: updatedCabinet });
-    }
-    
-    setShowAssignModal(false);
-    alert(`Тест "${template.title}" успешно выдан ученику!`);
-  };
+  // Student Cabinet teacher states
+  const [selectedTemplateToAssign, setSelectedTemplateToAssign] = useState<string>('');
+  const [viewingCabinetTest, setViewingCabinetTest] = useState<AssignedTest | null>(null);
+  const [cabinetCopied, setCabinetCopied] = useState(false);
 
   // Syllabus program states
   const [isSelectingProgram, setIsSelectingProgram] = useState(false);
@@ -249,8 +154,91 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
     score: '',
     maxScore: '100',
     gapsString: '',
+    wrongTasksString: '',
     notes: ''
   });
+
+  // Screenshot upload states for inline mock form
+  const [mockImgSrc, setMockImgSrc] = useState<string | null>(null);
+  const [isMockDragging, setIsMockDragging] = useState(false);
+  const [isMockScanning, setIsMockScanning] = useState(false);
+  const inlineMockFileRef = React.useRef<HTMLInputElement>(null);
+
+  const parseInlineFilename = (filename: string) => {
+    const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
+    let detectedScore = '';
+    let detectedMaxScore = '100';
+    let detectedWrongTasks: string[] = [];
+    let detectedName = '';
+
+    const slashMatch = nameWithoutExt.match(/(\d+)\s*[\/|изиз]\s*(\d+)/i);
+    if (slashMatch) {
+      detectedScore = slashMatch[1];
+      detectedMaxScore = slashMatch[2];
+    } else {
+      const scoreMatch = nameWithoutExt.match(/(\d+)\s*(?:б|балл|балла|баллов|points|pts|marks)\b/i);
+      if (scoreMatch) {
+        detectedScore = scoreMatch[1];
+      } else {
+        const allNumbers = nameWithoutExt.match(/\b\d+\b/g);
+        if (allNumbers && allNumbers.length > 0) {
+          detectedScore = allNumbers[0];
+          if (allNumbers.length > 1) {
+            detectedMaxScore = allNumbers[1];
+          }
+        }
+      }
+    }
+
+    const errorSectionMatch = nameWithoutExt.match(/(?:ошибки|ошибка|задания|номера|errors|tasks|wrong|mistakes|errs)\s*([^a-zA-Zа-яА-Я]*)/i);
+    if (errorSectionMatch) {
+      const numbersText = errorSectionMatch[1];
+      const numbers = numbersText.match(/\b\d+\b/g);
+      if (numbers) {
+        detectedWrongTasks = numbers;
+      }
+    } else {
+      const allNumbers = nameWithoutExt.match(/\b\d+\b/g);
+      if (allNumbers && allNumbers.length > 2) {
+        detectedWrongTasks = allNumbers.slice(2);
+      }
+    }
+
+    const variantMatch = nameWithoutExt.match(/(вариант\s*\d+|пробник\s*\d+|тест\s*\d+|fipi\s*\d+|огэ\s*\d+|егэ\s*\d+|майский|апрельский|мартовский|демо)/i);
+    if (variantMatch) {
+      detectedName = variantMatch[1].charAt(0).toUpperCase() + variantMatch[1].slice(1);
+    } else {
+      detectedName = `Вариант из ${nameWithoutExt.substring(0, 15)}`;
+    }
+
+    return {
+      score: detectedScore,
+      maxScore: detectedMaxScore,
+      wrongTasks: detectedWrongTasks,
+      name: detectedName
+    };
+  };
+
+  const handleInlineMockFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMockImgSrc(reader.result as string);
+      setIsMockScanning(true);
+      setTimeout(() => {
+        setIsMockScanning(false);
+        const parsed = parseInlineFilename(file.name);
+        setNewMock(prev => ({
+          ...prev,
+          name: parsed.name || prev.name,
+          score: parsed.score || prev.score,
+          maxScore: parsed.maxScore || prev.maxScore,
+          wrongTasksString: parsed.wrongTasks.join(', ') || prev.wrongTasksString,
+          gapsString: parsed.wrongTasks.map(t => `Задание ${t}`).join(', ') || prev.gapsString
+        }));
+      }, 1000);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const [showAddLesson, setShowAddLesson] = useState(false);
   const [newLesson, setNewLesson] = useState({
@@ -441,6 +429,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
       score: Number(newMock.score),
       maxScore: Number(newMock.maxScore),
       gaps: newMock.gapsString.split(',').map(g => g.trim()).filter(Boolean),
+      wrongTasks: newMock.wrongTasksString.split(',').map(t => t.trim()).filter(Boolean),
       notes: newMock.notes || undefined
     };
 
@@ -456,6 +445,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
       score: '',
       maxScore: '100',
       gapsString: '',
+      wrongTasksString: '',
       notes: ''
     });
     setShowAddMock(false);
@@ -1563,15 +1553,15 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
             Финансы и абонементы ({student.payments.length})
           </button>
           <button
-            onClick={() => setActiveTab('cabinet_tests')}
+            onClick={() => setActiveTab('cabinet')}
             className={`py-2 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'cabinet_tests' 
+              activeTab === 'cabinet' 
                 ? 'border-[#F4B5CD] text-[#F4B5CD] font-bold' 
                 : 'border-transparent text-white/40 hover:text-white hover:border-white/10'
             }`}
           >
-            <Laptop className="w-4.5 h-4.5" />
-            Личный кабинет ({student.cabinetId && cabinet ? (cabinet.assignedTests || []).length : 0})
+            <Laptop className="w-4 h-4 text-pink-300" />
+            Личный кабинет ({cabinet ? 'активен' : 'создать'})
           </button>
         </div>
         {activeTab === 'analytics' && (
@@ -1603,7 +1593,8 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                   label: m.name,
                   value: m.score,
                   maxScore: m.maxScore,
-                  notes: m.notes
+                  notes: m.notes,
+                  wrongTasks: m.wrongTasks
                 }))}
               />
             </div>
@@ -1611,85 +1602,164 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
             {/* Add Mock Test Result Form Box */}
             {showAddMock && (
               <form onSubmit={handleAddMock} className="bg-gradient-to-br from-purple-950/20 via-white/[0.02] to-white/[0.01] backdrop-blur-xl p-5 border border-white/10 space-y-4 animate-fadeIn rounded-2xl shadow-2xl">
-                <h4 className="font-serif text-blush-mist font-semibold text-sm">Добавить результаты пробного экзамена</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Название варианта / Пробного</label>
-                    <input 
-                      type="text" 
-                      required
-                      placeholder="e.g. Вариант ФИПИ Май ОГЭ"
-                      value={newMock.name}
-                      onChange={(e) => setNewMock({ ...newMock, name: e.target.value })}
-                      className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
-                    />
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-white/5 pb-3">
+                  <h4 className="font-serif text-blush-mist font-semibold text-sm">Добавить результаты пробного экзамена</h4>
+                  <span className="text-[10px] text-white/40">Используйте имя файла для автозаполнения балла и ошибок</span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                  {/* Left side: screenshot uploader */}
+                  <div className="lg:col-span-4 space-y-2">
+                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45">Скриншот результатов (Опционально)</label>
+                    <div 
+                      onDragOver={(e) => { e.preventDefault(); setIsMockDragging(true); }}
+                      onDragLeave={() => setIsMockDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsMockDragging(false);
+                        if (e.dataTransfer.files?.[0]) handleInlineMockFile(e.dataTransfer.files[0]);
+                      }}
+                      onClick={() => inlineMockFileRef.current?.click()}
+                      className={`border-2 border-dashed rounded-xl p-4 text-center transition duration-200 cursor-pointer flex flex-col items-center justify-center min-h-[120px] relative overflow-hidden group ${
+                        isMockDragging 
+                          ? 'border-[#F4B5CD] bg-[#F4B5CD]/5' 
+                          : mockImgSrc 
+                            ? 'border-white/10 bg-white/[0.01] hover:border-white/20' 
+                            : 'border-white/10 hover:border-[#F4B5CD]/30 bg-white/[0.01] hover:bg-[#F4B5CD]/[0.01]'
+                      }`}
+                    >
+                      <input 
+                        type="file" 
+                        ref={inlineMockFileRef}
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => e.target.files?.[0] && handleInlineMockFile(e.target.files[0])}
+                      />
+                      
+                      {mockImgSrc ? (
+                        <div className="relative w-full">
+                          <img src={mockImgSrc} alt="Скриншот" className="max-h-24 mx-auto object-contain rounded-lg border border-white/10 shadow-md" />
+                          {isMockScanning ? (
+                            <div className="absolute inset-0 bg-sky-900/40 flex items-center justify-center rounded-lg backdrop-blur-xs">
+                              <span className="bg-black/90 text-sky-400 text-[8px] font-bold font-mono px-2 py-0.5 rounded border border-sky-500/20 animate-pulse">ОЦИФРОВКА...</span>
+                            </div>
+                          ) : (
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition duration-150 flex items-center justify-center rounded-lg">
+                              <span className="text-[8px] font-bold text-white bg-white/10 px-2 py-1 rounded-lg border border-white/10">Заменить</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <Upload className="w-4 h-4 text-white/30 mx-auto group-hover:text-[#F4B5CD] transition" />
+                          <div>
+                            <p className="text-[10px] text-white/60 font-semibold leading-none mb-0.5">Перетащите скриншот</p>
+                            <p className="text-[9px] text-white/30 leading-none">или нажмите для выбора</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {mockImgSrc && !isMockScanning && (
+                      <p className="text-[9px] text-emerald-400 font-mono text-center">✓ Локальные данные извлечены успешно</p>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Дата проведения</label>
-                    <input 
-                      type="date"
-                      required
-                      value={newMock.date}
-                      onChange={(e) => setNewMock({ ...newMock, date: e.target.value })}
-                      className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1 font-mono">Набранный балл</label>
-                    <input 
-                      type="number"
-                      required
-                      min="0"
-                      placeholder="e.g. 78"
-                      value={newMock.score}
-                      onChange={(e) => setNewMock({ ...newMock, score: e.target.value })}
-                      className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none font-mono rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1 font-mono">Максимальный балл</label>
-                    <input 
-                      type="number"
-                      required
-                      min="1"
-                      placeholder="100"
-                      value={newMock.maxScore}
-                      onChange={(e) => setNewMock({ ...newMock, maxScore: e.target.value })}
-                      className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none font-mono rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Пробелы / Ошибки</label>
-                    <input 
-                      type="text"
-                      placeholder="e.g. Теория вероятностей, Задача 14"
-                      value={newMock.gapsString}
-                      onChange={(e) => setNewMock({ ...newMock, gapsString: e.target.value })}
-                      className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
-                    />
+
+                  {/* Right side: standard fields */}
+                  <div className="lg:col-span-8 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Название варианта / Пробного</label>
+                        <input 
+                          type="text" 
+                          required
+                          placeholder="e.g. Вариант ФИПИ Май ОГЭ"
+                          value={newMock.name}
+                          onChange={(e) => setNewMock({ ...newMock, name: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Дата проведения</label>
+                        <input 
+                          type="date"
+                          required
+                          value={newMock.date}
+                          onChange={(e) => setNewMock({ ...newMock, date: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1 font-mono">Набранный балл</label>
+                        <input 
+                          type="number"
+                          required
+                          min="0"
+                          placeholder="e.g. 78"
+                          value={newMock.score}
+                          onChange={(e) => setNewMock({ ...newMock, score: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none font-mono rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1 font-mono">Максимальный балл</label>
+                        <input 
+                          type="number"
+                          required
+                          min="1"
+                          placeholder="100"
+                          value={newMock.maxScore}
+                          onChange={(e) => setNewMock({ ...newMock, maxScore: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none font-mono rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Пробелы / Темы ошибок</label>
+                        <input 
+                          type="text"
+                          placeholder="e.g. Теория вероятностей, Задача 14"
+                          value={newMock.gapsString}
+                          onChange={(e) => setNewMock({ ...newMock, gapsString: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
+                        />
+                      </div>
+                      <div className="md:col-span-3">
+                        <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Задания с ошибками (через запятую)</label>
+                        <input 
+                          type="text"
+                          placeholder="e.g. 3, 5, 12, 14"
+                          value={newMock.wrongTasksString}
+                          onChange={(e) => setNewMock({ ...newMock, wrongTasksString: e.target.value })}
+                          className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Комментарий / Итоги</label>
+                      <input 
+                        type="text"
+                        placeholder="Например: Не успел проверить черновик, ошибки по спешке в вычислениях."
+                        value={newMock.notes}
+                        onChange={(e) => setNewMock({ ...newMock, notes: e.target.value })}
+                        className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
+                      />
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Комментарий / Итоги</label>
-                  <input 
-                    type="text"
-                    placeholder="Например: Не успел проверить черновик, ошибки по спешке в вычислениях."
-                    value={newMock.notes}
-                    onChange={(e) => setNewMock({ ...newMock, notes: e.target.value })}
-                    className="w-full text-xs px-3 py-2 border border-white/10 bg-white/5 text-white focus:border-[#F4B5CD] focus:outline-none rounded-xl"
-                  />
-                </div>
-                <div className="flex gap-2 justify-end pt-2">
+
+                <div className="flex gap-2 justify-end pt-3 border-t border-white/5">
                   <button 
                     type="button" 
-                    onClick={() => setShowAddMock(false)}
-                    className="px-4 py-2 border border-white/10 text-[10px] tracking-widest uppercase font-bold text-white/60 hover:bg-white/5 transition rounded-xl"
+                    onClick={() => {
+                      setShowAddMock(false);
+                      setMockImgSrc(null);
+                    }}
+                    className="px-4 py-2 border border-white/10 text-[10px] tracking-widest uppercase font-bold text-white/60 hover:bg-white/5 transition rounded-xl cursor-pointer"
                   >
                     Отменить
                   </button>
                   <button 
                     type="submit"
-                    className="px-5 py-2 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/30 border border-[#F4B5CD]/20 text-[#F4B5CD] text-[10px] tracking-widest uppercase font-bold transition rounded-xl"
+                    className="px-5 py-2 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/30 border border-[#F4B5CD]/20 text-[#F4B5CD] text-[10px] tracking-widest uppercase font-bold transition rounded-xl cursor-pointer"
                   >
                     Внести результаты
                   </button>
@@ -1883,8 +1953,18 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                             {exam.gaps.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1.5">
                                 {exam.gaps.map((gap, i) => (
-                                  <span key={i} className="text-[9px] bg-rose-500/10 text-rose-300 border border-rose-500/10 px-1.5 py-0.5 rounded font-mono">
+                                  <span key={i} className="text-[9px] bg-[#F4B5CD]/10 text-[#F4B5CD] border border-[#F4B5CD]/15 px-1.5 py-0.5 rounded font-mono">
                                     {gap}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {exam.wrongTasks && exam.wrongTasks.length > 0 && (
+                              <div className="flex flex-wrap gap-1 items-center mt-1.5">
+                                <span className="text-[10px] text-white/35">Ошибки в заданиях:</span>
+                                {exam.wrongTasks.map((task, i) => (
+                                  <span key={i} className="text-[9px] bg-rose-500/15 text-rose-300 border border-rose-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                    {task}
                                   </span>
                                 ))}
                               </div>
@@ -2916,379 +2996,342 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
           </div>
         )}
 
-        {/* Tab 5: STUDENT CABINET TESTS */}
-        {activeTab === 'cabinet_tests' && (
+        {/* Tab 5: STUDENT CABINET CONTROLS */}
+        {activeTab === 'cabinet' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h3 className="font-serif text-white text-base">Тесты в Личном Кабинете</h3>
-                <p className="text-xs text-white/40 mt-1">
-                  Ученик занимается по индивидуальной ссылке без регистрации. Результаты и черновики мгновенно обновляются в реальном времени.
-                </p>
-              </div>
-              {student.cabinetId && cabinet && (
+            {!cabinet ? (
+              /* Provision Cabinet if missing */
+              <div className="bg-[#12131a]/85 border border-dashed border-white/10 rounded-2xl p-10 text-center max-w-lg mx-auto space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 flex items-center justify-center mx-auto text-xl">
+                  🎓
+                </div>
+                <div>
+                  <h4 className="font-serif text-sm text-white">Личный кабинет не создан</h4>
+                  <p className="text-[11px] text-white/40 leading-relaxed mt-1 font-light">
+                    У этого ученика пока нет персонального учебного кабинета. Создайте его, чтобы назначать варианты ЕГЭ/ОГЭ, отслеживать прогресс правильных ответов и разбирать ошибки!
+                  </p>
+                </div>
                 <button
-                  onClick={() => setShowAssignModal(true)}
-                  className="w-full sm:w-auto py-2 px-4 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/35 text-[#F4B5CD] text-xs font-extrabold uppercase tracking-wider transition rounded-xl flex items-center justify-center gap-1.5 cursor-pointer font-mono"
+                  type="button"
+                  onClick={() => {
+                    const cabId = `cab-${Math.random().toString(36).substring(2, 11)}`;
+                    const newCabinet: StudentCabinet = {
+                      id: cabId,
+                      studentId: student.id,
+                      studentName: student.name,
+                      tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
+                      createdAt: new Date().toISOString(),
+                      assignedTests: []
+                    };
+                    onUpdateStudent({ ...student, cabinetId: cabId });
+                    if (onUpdateCabinets) {
+                      onUpdateCabinets({
+                        ...cabinets,
+                        [cabId]: newCabinet
+                      });
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/20 text-[#F4B5CD] rounded-xl text-[10px] uppercase tracking-wider font-bold transition cursor-pointer"
                 >
-                  <Plus className="w-4 h-4" />
-                  Выдать тест из библиотеки
-                </button>
-              )}
-            </div>
-
-            {!student.cabinetId ? (
-              <div className="p-12 text-center bg-[#F4B5CD]/5 border border-[#F4B5CD]/15 rounded-3xl max-w-xl mx-auto space-y-5">
-                <Laptop className="w-12 h-12 text-[#F4B5CD] mx-auto opacity-85 animate-pulse" />
-                <h4 className="text-base font-bold text-white">Личный кабинет ученика не создан</h4>
-                <p className="text-xs text-white/50 max-w-md mx-auto leading-relaxed">
-                  Создайте личный кабинет для ученика <span className="text-white font-bold">{student.name}</span>. Это даст ему прямую ссылку для входа без регистрации и паролей. Он сможет проходить тесты, видеть разборы ошибок и статистику.
-                </p>
-                <button
-                  onClick={handleCreateCabinetLocally}
-                  className="py-3 px-6 bg-[#F4B5CD] hover:bg-[#F4B5CD]/95 text-[#0C0D12] text-xs font-extrabold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-2 mx-auto font-mono"
-                >
-                  <Plus className="w-4.5 h-4.5 stroke-[3px]" />
-                  Создать личный кабинет
-                </button>
-              </div>
-            ) : !cabinet ? (
-              <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl max-w-xl mx-auto space-y-4">
-                <div className="w-12 h-12 border-4 border-[#F4B5CD]/25 border-t-[#F4B5CD] rounded-full animate-spin mx-auto"></div>
-                <h4 className="text-sm font-semibold text-white">Подключение к облачной синхронизации...</h4>
-                <p className="text-xs text-white/40 max-w-md mx-auto leading-relaxed">
-                  Пытаемся получить данные личного кабинета из базы данных. Если синхронизация заблокирована провайдером или это первый запуск, вы можете принудительно восстановить кабинет на этом устройстве.
-                </p>
-                <button
-                  onClick={handleCreateCabinetLocally}
-                  className="py-2.5 px-5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 mx-auto font-mono"
-                >
-                  <SparklesIcon className="w-4 h-4 text-[#F4B5CD]" />
-                  Восстановить локально
+                  Создать Личный кабинет
                 </button>
               </div>
             ) : (
-              <>
-                {/* Quick URL Link Copy bar with dual modes */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Cloud Sync Mode */}
-                  <div className="p-5 bg-gradient-to-br from-white/[0.02] to-white/[0.01] border border-white/5 rounded-2xl flex flex-col justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 flex items-center justify-center shrink-0">
-                        <Link className="w-5 h-5 text-[#F4B5CD]" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold text-white">Облачная ссылка ученика</h4>
-                        <p className="text-[10px] text-white/40 mt-0.5 leading-normal">
-                          Синхронизируется через интернет. Все результаты и черновики ученика мгновенно поступают на ваш дашборд.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 w-full">
-                      <button
-                        onClick={async () => {
-                          const link = `${window.location.origin}${window.location.pathname}?cabinetId=${student.cabinetId}`;
-                          const success = await copyToClipboard(link);
-                          if (success) {
-                            alert('Облачная ссылка кабинета скопирована!');
-                          } else {
-                            alert(`Не удалось скопировать автоматически. Скопируйте вручную:\n\n${link}`);
-                          }
-                        }}
-                        className="flex-1 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD] py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 font-mono"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        Копировать ссылку
-                      </button>
-                      <a
-                        href={`${window.location.origin}${window.location.pathname}?cabinetId=${student.cabinetId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 font-mono"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Открыть ЛК
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Offline Autonomous Mode */}
-                  <div className="p-5 bg-gradient-to-br from-white/[0.02] to-white/[0.01] border border-white/5 rounded-2xl flex flex-col justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
-                        <Laptop className="w-5 h-5 text-purple-300" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-semibold text-white">Автономная офлайн-ссылка</h4>
-                          <span className="text-[8px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded uppercase font-bold shrink-0 font-mono">100% надёжно</span>
-                        </div>
-                        <p className="text-[10px] text-white/40 mt-0.5 leading-normal">
-                          Все тесты закодированы прямо в ссылке. Работает абсолютно всегда, даже без интернета, VPN и баз данных!
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 w-full">
-                      <button
-                        onClick={async () => {
-                          const compact = toCompact(cabinet);
-                          const encoded = encodeData(compact);
-                          const link = `${window.location.origin}${window.location.pathname}?cabinet_data=${encoded}`;
-                          const success = await copyToClipboard(link);
-                          if (success) {
-                            alert('Автономная ссылка с тестами скопирована! Отправьте её ученику.');
-                          } else {
-                            alert(`Не удалось скопировать автоматически. Скопируйте вручную:\n\n${link}`);
-                          }
-                        }}
-                        className="flex-1 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-200 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 font-mono"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        Копировать автономную
-                      </button>
-                      <a
-                        href={(() => {
-                          if (!cabinet) return '#';
-                          const compact = toCompact(cabinet);
-                          const encoded = encodeData(compact);
-                          return `${window.location.origin}${window.location.pathname}?cabinet_data=${encoded}`;
-                        })()}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 font-mono"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Открыть автономно
-                      </a>
-                    </div>
-                  </div>
-                </div>
-
-                {!cabinet.assignedTests || cabinet.assignedTests.length === 0 ? (
-                  <div className="p-12 text-center bg-white/[0.01] border border-white/5 rounded-3xl">
-                    <Laptop className="w-10 h-10 text-white/20 mx-auto mb-4" />
-                    <h4 className="text-sm font-semibold text-white">В личном кабинете пока нет тестов</h4>
-                    <p className="text-xs text-white/40 mt-2 max-w-sm mx-auto mb-5">
-                      Выдайте любой тест из вашей библиотеки шаблонов прямо сейчас.
+              /* Active Cabinet UI */
+              <div className="space-y-6">
+                
+                {/* Link display & copier card */}
+                <div className="bg-[#12131a]/85 border border-white/5 rounded-2xl p-5 shadow-xl space-y-4">
+                  <div>
+                    <span className="text-[9px] uppercase tracking-widest text-[#F4B5CD] font-bold">Личный кабинет ученика</span>
+                    <h4 className="font-serif text-sm text-white mt-0.5">Постоянная ссылка для доступа</h4>
+                    <p className="text-[10px] text-white/40 font-light mt-0.5">
+                      Ученику не требуется регистрация или вход через Google. Передайте эту ссылку — она действует всегда!
                     </p>
-                    <button
-                      onClick={() => setShowAssignModal(true)}
-                      className="py-2 px-5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 text-xs font-extrabold uppercase tracking-wider transition rounded-xl flex items-center justify-center gap-1.5 cursor-pointer font-mono mx-auto"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Выбрать тест из библиотеки
-                    </button>
                   </div>
-                ) : (
-              <div className="space-y-4">
-                {/* Cabinet Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
-                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">Всего тестов</span>
-                    <span className="text-xl font-bold text-white mt-1 block">{cabinet.assignedTests.length}</span>
-                  </div>
-                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
-                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">Решено</span>
-                    <span className="text-xl font-bold text-emerald-400 mt-1 block">
-                      {cabinet.assignedTests.filter(t => t.status === 'submitted').length}
-                    </span>
-                  </div>
-                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
-                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">В процессе</span>
-                    <span className="text-xl font-bold text-amber-400 mt-1 block">
-                      {cabinet.assignedTests.filter(t => t.status === 'draft' || (!t.status && Object.keys(t.answers || {}).length > 0)).length}
-                    </span>
-                  </div>
-                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center">
-                    <span className="text-[9px] uppercase tracking-wider text-white/40 block">Средняя точность</span>
-                    <span className="text-xl font-bold text-[#F4B5CD] mt-1 block">
-                      {(() => {
-                        const submitted = cabinet.assignedTests.filter(t => t.status === 'submitted');
-                        if (submitted.length === 0) return '—';
-                        const totalScore = submitted.reduce((acc, t) => acc + (t.score || 0), 0);
-                        const totalQs = submitted.reduce((acc, t) => acc + (t.totalQuestions || t.questions.length), 0);
-                        return totalQs > 0 ? `${Math.round((totalScore / totalQs) * 100)}%` : '—';
-                      })()}
-                    </span>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}${window.location.pathname}?cabinet=${student.cabinetId}`}
+                      className="flex-1 text-xs px-3 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white/70 select-all focus:outline-none font-mono"
+                    />
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${window.location.origin}${window.location.pathname}?cabinet=${student.cabinetId}`;
+                          copyToClipboard(link);
+                          setCabinetCopied(true);
+                          setTimeout(() => setCabinetCopied(false), 2000);
+                        }}
+                        className="flex-1 sm:flex-initial px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {cabinetCopied ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Скопировано!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Копировать</span>
+                          </>
+                        )}
+                      </button>
+                      <a
+                        href={`${window.location.origin}${window.location.pathname}?cabinet=${student.cabinetId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2.5 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/15 text-[#F4B5CD] text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Открыть</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
 
-                {/* Tests List */}
-                <div className="border border-white/5 rounded-2xl overflow-hidden bg-white/[0.01]">
-                  <div className="p-4 bg-white/[0.02] border-b border-white/5">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-white/40">Список назначенных тестов</span>
-                  </div>
-                  <div className="divide-y divide-white/5">
-                    {cabinet.assignedTests.map((assignedTest) => {
-                      const isSubmitted = assignedTest.status === 'submitted';
-                      const isDraft = assignedTest.status === 'draft' || (!assignedTest.status && Object.keys(assignedTest.answers || {}).length > 0);
-                      const discussCount = Object.values(assignedTest.wantToDiscuss || {}).filter(Boolean).length;
+                {/* Assignment box */}
+                <div className="bg-[#12131a]/60 border border-white/5 p-5 rounded-2xl shadow-lg space-y-4">
+                  <h4 className="text-xs uppercase tracking-wider font-semibold text-white/80">
+                    Назначить новый тест из библиотеки
+                  </h4>
 
-                      return (
-                        <div key={assignedTest.id} className="p-5 hover:bg-white/[0.01] transition">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="font-semibold text-white text-sm">{assignedTest.title}</h4>
-                                <span className="text-white/20">•</span>
-                                <span className="text-xs text-white/45">{assignedTest.questions.length} вопр.</span>
+                  {!testTemplates || testTemplates.length === 0 ? (
+                    <p className="text-xs text-white/35 italic">
+                      В библиотеке нет созданных вариантов. Перейдите на вкладку "Тесты" (значок 📋 вверху), чтобы создать тесты!
+                    </p>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <select
+                        value={selectedTemplateToAssign}
+                        onChange={(e) => setSelectedTemplateToAssign(e.target.value)}
+                        className="flex-1 text-xs px-3.5 py-2.5 border border-white/10 bg-black/40 text-white rounded-xl focus:outline-none focus:border-[#F4B5CD]"
+                      >
+                        <option value="">-- Выберите тест из библиотеки --</option>
+                        {testTemplates.map(tmpl => (
+                          <option key={tmpl.id} value={tmpl.id} className="bg-[#12131a]">
+                            [{tmpl.type}] {tmpl.title} ({tmpl.questions?.length || 0} зад.)
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!selectedTemplateToAssign}
+                        onClick={() => {
+                          const selectedTemplate = testTemplates?.find(t => t.id === selectedTemplateToAssign);
+                          if (selectedTemplate) {
+                            const newAssigned: AssignedTest = {
+                              id: 'assigned-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+                              templateId: selectedTemplate.id,
+                              title: selectedTemplate.title,
+                              type: selectedTemplate.type,
+                              questions: JSON.parse(JSON.stringify(selectedTemplate.questions)),
+                              status: 'pending',
+                              assignedAt: new Date().toISOString()
+                            };
+                            const updatedCabinet = {
+                              ...cabinet,
+                              assignedTests: [newAssigned, ...(cabinet.assignedTests || [])]
+                            };
+                            if (onUpdateCabinets) {
+                              onUpdateCabinets({
+                                ...cabinets,
+                                [student.cabinetId!]: updatedCabinet
+                              });
+                            }
+                            setSelectedTemplateToAssign('');
+                            alert(`Тест успешно назначен ученику!`);
+                          }
+                        }}
+                        className="px-5 py-2.5 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/20 text-[#F4B5CD] text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        Назначить
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Assigned tests lists */}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-sans uppercase text-white/40 tracking-widest font-extrabold pb-1 border-b border-white/5">
+                    Назначенные тесты ({cabinet.assignedTests?.length || 0})
+                  </h4>
+
+                  {!cabinet.assignedTests || cabinet.assignedTests.length === 0 ? (
+                    <p className="text-xs text-white/30 italic text-center py-6">
+                      Ученику пока не назначено ни одного теста.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {cabinet.assignedTests.map(test => {
+                        const isSolved = test.status === 'submitted';
+                        return (
+                          <div
+                            key={test.id}
+                            className="bg-[#12131a]/50 border border-white/5 p-4 rounded-xl flex flex-col justify-between min-h-[120px] hover:border-white/10 transition"
+                          >
+                            <div>
+                              <div className="flex justify-between items-start gap-2 mb-2">
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold font-mono bg-[#F4B5CD]/10 text-[#F4B5CD] border border-[#F4B5CD]/15">
+                                  {test.type}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded text-[8px] font-bold font-mono ${
+                                  isSolved 
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15'
+                                    : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/15 animate-pulse'
+                                }`}>
+                                  {isSolved ? 'Решен' : 'В процессе'}
+                                </span>
                               </div>
-                              <p className="text-[10px] text-white/40">
-                                Добавлен: {assignedTest.assignedAt ? new Date(assignedTest.assignedAt).toLocaleDateString() : 'Неизвестно'}
+
+                              <h5 className="font-serif text-xs font-semibold text-white/90 line-clamp-2 font-medium">
+                                {test.title}
+                              </h5>
+                              <p className="text-[8px] text-white/30 font-mono mt-1">
+                                Назначен: {new Date(test.assignedAt).toLocaleDateString()}
                               </p>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                              {isSubmitted ? (
-                                <div className="flex items-center gap-2.5 flex-wrap justify-end">
-                                  <span className="text-xs text-emerald-400 font-mono font-bold bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-xl">
-                                    Сдан • {assignedTest.score} / {assignedTest.totalQuestions || assignedTest.questions.length} (
-                                    {Math.round(((assignedTest.score || 0) / (assignedTest.totalQuestions || assignedTest.questions.length)) * 100)}%)
-                                  </span>
-                                  {discussCount > 0 && (
-                                    <span className="text-xs text-rose-300 font-bold bg-rose-500/15 border border-rose-500/30 px-2 py-1 rounded-xl flex items-center gap-1">
-                                      ❓ {discussCount} на разбор
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => setExpandedTestId(expandedTestId === assignedTest.id ? null : assignedTest.id)}
-                                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs px-3 py-1.5 rounded-xl transition cursor-pointer"
-                                  >
-                                    {expandedTestId === assignedTest.id ? 'Скрыть разбор' : 'Показать разбор'}
-                                  </button>
-                                </div>
-                              ) : isDraft ? (
-                                <span className="text-xs text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-xl">
-                                  Сохранен черновик ({Object.keys(assignedTest.answers || {}).length} отв.)
-                                </span>
-                              ) : (
-                                <span className="text-xs text-white/40 font-medium bg-white/5 border border-white/10 px-2.5 py-1.5 rounded-xl">
-                                  Ожидает решения
-                                </span>
+                            <div className="flex gap-2 mt-4 pt-2.5 border-t border-white/5">
+                              {isSolved && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingCabinetTest(test)}
+                                  className="flex-1 py-1.5 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 text-[#F4B5CD] text-[9px] font-bold uppercase tracking-wider rounded-lg border border-[#F4B5CD]/10 transition cursor-pointer"
+                                >
+                                  Посмотреть ошибки
+                                </button>
                               )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Отозвать тест "${test.title}"? Это удалит все результаты решения.`)) {
+                                    const updated = cabinet.assignedTests.filter(t => t.id !== test.id);
+                                    const updatedCabinet = { ...cabinet, assignedTests: updated };
+                                    if (onUpdateCabinets) {
+                                      onUpdateCabinets({ ...cabinets, [student.cabinetId!]: updatedCabinet });
+                                    }
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 bg-white/5 hover:bg-rose-500/10 text-white/30 hover:text-rose-400 rounded-lg transition cursor-pointer"
+                                title="Отозвать тест"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
-
-                          {/* Expanded Error/Question Review Table */}
-                          {isSubmitted && expandedTestId === assignedTest.id && (
-                            <div className="mt-5 border-t border-white/5 pt-5 space-y-4">
-                              <h5 className="text-xs font-bold text-[#F4B5CD] uppercase tracking-wider mb-2">Детальный анализ ответов</h5>
-                              <div className="grid grid-cols-1 gap-4">
-                                {assignedTest.questions.map((question, qIdx) => {
-                                  const studentAnswer = assignedTest.answers?.[question.id] || '';
-                                  const checkedResult = assignedTest.checkedResults?.[question.id];
-                                  const isCorrect = checkedResult?.isCorrect;
-                                  const wantsToDiscuss = assignedTest.wantToDiscuss?.[question.id];
-
-                                  return (
-                                    <div 
-                                      key={question.id} 
-                                      className={`p-4 rounded-xl border transition ${
-                                        isCorrect 
-                                          ? 'bg-emerald-500/[0.02] border-emerald-500/10' 
-                                          : 'bg-rose-500/[0.02] border-rose-500/10'
-                                      } ${wantsToDiscuss ? 'ring-1 ring-[#F4B5CD]/35 bg-[#F4B5CD]/[0.01]' : ''}`}
-                                    >
-                                      <div className="flex items-start justify-between gap-4">
-                                        <div className="space-y-1.5 flex-1">
-                                          <div className="flex items-center gap-2 flex-wrap">
-                                            <span className="font-mono text-xs font-extrabold text-white/50">Задание №{qIdx + 1}</span>
-                                            {isCorrect ? (
-                                              <span className="text-[10px] uppercase font-bold text-emerald-400 font-mono flex items-center gap-1">
-                                                ✔️ Верно
-                                              </span>
-                                            ) : (
-                                              <span className="text-[10px] uppercase font-bold text-rose-400 font-mono flex items-center gap-1">
-                                                ❌ Ошибка
-                                              </span>
-                                            )}
-                                            {wantsToDiscuss && (
-                                              <span className="text-[10px] uppercase font-bold text-[#F4B5CD] font-mono bg-[#F4B5CD]/10 px-1.5 py-0.5 rounded-md border border-[#F4B5CD]/20 flex items-center gap-1">
-                                                ❓ Требуется разбор
-                                              </span>
-                                            )}
-                                          </div>
-                                          <p className="text-xs text-white/85 leading-relaxed font-serif whitespace-pre-line">
-                                            {question.text}
-                                          </p>
-
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                                            <div className="p-2.5 bg-black/40 border border-white/5 rounded-lg">
-                                              <span className="text-[9px] uppercase tracking-wider text-white/40 block">Ответ ученика:</span>
-                                              <span className={`text-xs font-mono font-bold mt-1 block ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                {studentAnswer || '— (не ответил)'}
-                                              </span>
-                                            </div>
-                                            <div className="p-2.5 bg-black/40 border border-white/5 rounded-lg">
-                                              <span className="text-[9px] uppercase tracking-wider text-white/40 block">Правильный ответ:</span>
-                                              <span className="text-xs font-mono font-bold text-emerald-400 mt-1 block">
-                                                {question.correctAnswer}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-          </>
-        )}
-
-            {/* Modal to assign test from templates inside StudentDetail */}
-            {showAssignModal && (
-              <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-[#0C0D12] border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative animate-scaleIn text-left">
-                  <button
-                    onClick={() => setShowAssignModal(false)}
-                    className="absolute top-4 right-4 p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-
-                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-purple-400 font-mono mb-1">
-                    Выдать тест из библиотеки
-                  </h3>
-                  <p className="text-xs text-white/50 mb-5 leading-relaxed">
-                    Выберите тест из вашей библиотеки шаблонов, чтобы выдать его ученику <span className="text-white font-bold">{student.name}</span>.
-                  </p>
-
-                  <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-                    {templates.length === 0 ? (
-                      <div className="text-center py-6 text-xs text-white/40">
-                        У вас пока нет созданных шаблонов тестов. Сначала добавьте шаблоны во вкладке "Кабинеты & Тесты".
-                      </div>
-                    ) : (
-                      templates.map((tpl) => (
-                        <button
-                          key={tpl.id}
-                          onClick={() => handleAssignTestDirectly(tpl)}
-                          className="w-full text-left p-3.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-[#F4B5CD]/30 rounded-xl transition flex items-center justify-between gap-3 text-xs cursor-pointer"
-                        >
-                          <div>
-                            <div className="font-bold text-white/90 truncate max-w-[200px]">{tpl.title}</div>
-                            <div className="text-[9px] text-white/40 mt-0.5 font-mono">{tpl.type} • {tpl.questions.length} зад.</div>
-                          </div>
-                          <span className="text-[#F4B5CD] font-mono font-bold shrink-0">Выбрать →</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
         )}
+
+        {/* Dynamic Cabinet Test Results Inspector Modal */}
+        {viewingCabinetTest && (
+          <div className="fixed inset-0 bg-[#07080a]/85 backdrop-blur-md z-[190] flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-[#12131a] border border-white/10 w-full max-w-2xl rounded-2xl p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto custom-scrollbar space-y-4">
+              <button
+                type="button"
+                onClick={() => setViewingCabinetTest(null)}
+                className="absolute top-4 right-4 p-1 hover:bg-white/5 text-white/40 hover:text-white rounded-lg transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <span className="text-[9px] font-mono font-bold uppercase bg-[#F4B5CD]/15 border border-[#F4B5CD]/25 text-[#F4B5CD] px-2 py-0.5 rounded">
+                Инспектор решений ученика
+              </span>
+              <h3 className="font-serif text-base text-white mt-1.5 pr-6 line-clamp-1 font-medium">
+                {viewingCabinetTest.title}
+              </h3>
+              <p className="text-[10px] text-white/40 font-mono -mt-1">
+                Сдано: {viewingCabinetTest.submittedAt ? new Date(viewingCabinetTest.submittedAt).toLocaleString() : ''} • Результат: <strong className="text-[#F4B5CD] font-bold">{viewingCabinetTest.score} / {viewingCabinetTest.totalQuestions} правильных</strong>
+              </p>
+
+              <div className="space-y-3.5 pt-2">
+                {viewingCabinetTest.questions.map((q, idx) => {
+                  const studentAns = viewingCabinetTest.answers?.[q.id];
+                  const isCorrect = viewingCabinetTest.checkedResults?.[q.id];
+                  const isDiscussed = viewingCabinetTest.wantToDiscuss?.[q.id];
+
+                  return (
+                    <div
+                      key={q.id}
+                      className={`p-4 rounded-xl border space-y-2.5 transition ${
+                        isCorrect
+                          ? 'bg-emerald-500/[0.02] border-emerald-500/10'
+                          : 'bg-rose-500/[0.02] border-rose-500/10'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
+                        <span className="text-[9px] font-mono font-bold text-white/35 uppercase">
+                          Задание {idx + 1} ({q.type === 'short' ? 'краткий' : 'выбор'})
+                        </span>
+
+                        <div className="flex items-center gap-1.5">
+                          {isDiscussed && (
+                            <span className="px-2 py-0.5 rounded text-[8px] font-bold font-mono bg-[#C3B4FC]/10 text-[#C3B4FC] border border-[#C3B4FC]/15 uppercase tracking-wider animate-pulse">
+                              Просит разобрать 🙋‍♀️
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold ${
+                            isCorrect 
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          }`}>
+                            {isCorrect ? 'ВЕРНО' : 'ОШИБКА'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-white/75 whitespace-pre-wrap leading-relaxed font-light font-sans">
+                        {q.text}
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[10px]">
+                        <div className="p-2.5 bg-white/[0.02] border border-white/5 rounded-lg">
+                          <p className="text-[8px] uppercase font-bold text-white/30 mb-0.5">Ответ ученика:</p>
+                          <p className="font-serif text-white/85">
+                            {q.type === 'short' ? (
+                              studentAns || <span className="text-white/20 italic">Пусто</span>
+                            ) : q.type === 'single' ? (
+                              q.options?.[studentAns] || <span className="text-white/20 italic">Не выбрано</span>
+                            ) : (
+                              ((studentAns as number[]) || []).map(idx => q.options?.[idx]).join(', ') || <span className="text-white/20 italic">Не выбрано</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="p-2.5 bg-[#F4B5CD]/5 border border-[#F4B5CD]/10 rounded-lg">
+                          <p className="text-[8px] uppercase font-bold text-[#F4B5CD] mb-0.5">Ключ правильного ответа:</p>
+                          <p className="font-serif text-[#F4B5CD] font-medium">
+                            {q.type === 'short' ? (
+                              q.correctAnswer
+                            ) : q.type === 'single' ? (
+                              q.options?.[(q.correctOptions || []).findIndex(v => v === true)]
+                            ) : (
+                              (q.correctOptions || [])
+                                .map((val, idx) => (val ? q.options?.[idx] : null))
+                                .filter(Boolean)
+                                .join(', ')
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {showParentReport && (

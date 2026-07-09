@@ -6,6 +6,7 @@ export interface MockExam {
   maxScore: number;    // e.g. 100
   gaps: string[];      // Gaps identified in this mock
   notes?: string;      // Comment
+  wrongTasks?: string[]; // Tasks/Questions with errors
 }
 
 export interface Lesson {
@@ -234,6 +235,8 @@ export interface TestQuestion {
   matchingLeft?: string[]; // For matching left items
   matchingRight?: string[]; // For matching right items
   matchingAnswers?: number[]; // For matching leftIndex -> rightIndex
+  taskNumber?: string; // e.g. "2" or "8"
+  explanation?: string; // Explanation for checking
 }
 
 export interface TestTemplate {

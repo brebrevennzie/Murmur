@@ -6,6 +6,7 @@ interface ChartPoint {
   value: number;  // e.g. 42
   maxScore: number; // e.g. 100
   notes?: string;
+  wrongTasks?: string[];
 }
 
 interface SvgChartProps {
@@ -215,6 +216,18 @@ export const SvgChart: React.FC<SvgChartProps> = ({ points }) => {
               <p className="mt-1.5 text-[10px] text-white/60 border-t border-white/5 pt-1.5 line-clamp-2 leading-relaxed">
                 "{points[hoveredPoint].notes}"
               </p>
+            )}
+            {points[hoveredPoint].wrongTasks && points[hoveredPoint].wrongTasks.length > 0 && (
+              <div className="mt-1.5 border-t border-white/5 pt-1.5">
+                <span className="text-rose-400 text-[9px] uppercase font-bold block mb-1">Ошибки в заданиях:</span>
+                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto pr-1">
+                  {points[hoveredPoint].wrongTasks.map((task, idx) => (
+                    <span key={idx} className="bg-rose-500/15 text-rose-300 text-[9px] px-1.5 py-0.5 rounded font-mono border border-rose-500/10">
+                      {task}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}

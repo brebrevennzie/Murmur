@@ -6,9 +6,10 @@ interface StudentCardProps {
   student: Student;
   cabinet?: StudentCabinet | null;
   onSelect: () => void;
+  onPassMock: (e: React.MouseEvent) => void;
 }
 
-export const StudentCard: React.FC<StudentCardProps> = ({ student, cabinet, onSelect }) => {
+export const StudentCard: React.FC<StudentCardProps> = ({ student, cabinet, onSelect, onPassMock }) => {
   // Compute average mock score
   const mockCount = (student.mockExams || []).length;
   const avgPct = mockCount > 0 
@@ -91,31 +92,39 @@ export const StudentCard: React.FC<StudentCardProps> = ({ student, cabinet, onSe
 
           {/* Average / Latest score indicator */}
           {avgPct !== null ? (
-            <div className="flex items-center gap-2.5 text-xs text-white/70 border-t border-white/5 pt-3 mt-1">
-              <Award className="w-4 h-4 text-dusty-rose shrink-0" />
-              <div className="flex justify-between w-full items-center">
-                <span className="text-white/40 uppercase text-[9px] tracking-wider">Успеваемость:</span>
-                <span className="font-serif text-white font-medium text-sm">
-                  {avgPct}% {latestMock && `(${latestMock.score}/${latestMock.maxScore})`}
-                </span>
+            <div className="flex flex-col gap-2 border-t border-white/5 pt-3 mt-1" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2.5 text-xs text-white/70">
+                <Award className="w-4 h-4 text-dusty-rose shrink-0" />
+                <div className="flex justify-between w-full items-center">
+                  <span className="text-white/40 uppercase text-[9px] tracking-wider">Успеваемость:</span>
+                  <span className="font-serif text-white font-medium text-sm">
+                    {avgPct}% {latestMock && `(${latestMock.score}/${latestMock.maxScore})`}
+                  </span>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={onPassMock}
+                className="w-full mt-1.5 py-1.5 px-3 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 hover:border-[#F4B5CD]/45 text-[#F4B5CD] text-[10px] uppercase font-bold tracking-wider rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5 shrink-0 text-[#F4B5CD]/85" />
+                <span>Прошли пробник</span>
+              </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5 text-xs text-white/40 border-t border-white/5 pt-3 mt-1 font-serif">
-              <BookOpen className="w-3.5 h-3.5 text-white/20" />
-              <span>Пробники еще не проводились</span>
-            </div>
-          )}
-          {/* Cabinet Tests Tracker */}
-          {cabinet && (
-            <div className="flex items-center gap-2.5 text-xs text-white/70 border-t border-white/5 pt-3 mt-2">
-              <Laptop className="w-4 h-4 text-[#F4B5CD] shrink-0" />
-              <div className="flex justify-between w-full items-center">
-                <span className="text-white/40 uppercase text-[9px] tracking-wider">Тесты в ЛК:</span>
-                <span className="text-[11px] font-mono text-[#F4B5CD] font-bold">
-                  {cabinet.assignedTests?.filter(t => t.status === 'submitted').length || 0} / {cabinet.assignedTests?.length || 0} решено
-                </span>
+            <div className="flex flex-col gap-2 border-t border-white/5 pt-3 mt-1" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2.5 text-xs text-white/40 font-serif">
+                <BookOpen className="w-3.5 h-3.5 text-white/20 shrink-0" />
+                <span>Пробники еще не проводились</span>
               </div>
+              <button
+                type="button"
+                onClick={onPassMock}
+                className="w-full mt-1 py-1.5 px-3 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 hover:border-[#F4B5CD]/45 text-[#F4B5CD] text-[10px] uppercase font-bold tracking-wider rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5 shrink-0 text-[#F4B5CD]/85" />
+                <span>Прошли пробник</span>
+              </button>
             </div>
           )}
         </div>
