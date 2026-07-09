@@ -75,22 +75,6 @@ export default function App() {
 
   const cabinetIdFromUrl = getCabinetIdFromUrl();
 
-  if (cabinetIdFromUrl) {
-    return (
-      <ErrorBoundary>
-        <StudentCabinetView cabinetId={cabinetIdFromUrl} />
-      </ErrorBoundary>
-    );
-  }
-
-  if (viewingCabinetId) {
-    return (
-      <ErrorBoundary>
-        <StudentCabinetView cabinetId={viewingCabinetId} onBack={() => setViewingCabinetId(null)} />
-      </ErrorBoundary>
-    );
-  }
-
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -685,6 +669,22 @@ export default function App() {
     }
     return false;
   }, []);
+
+  if (cabinetIdFromUrl) {
+    return (
+      <ErrorBoundary>
+        <StudentCabinetView cabinetId={cabinetIdFromUrl} />
+      </ErrorBoundary>
+    );
+  }
+
+  if (viewingCabinetId) {
+    return (
+      <ErrorBoundary>
+        <StudentCabinetView cabinetId={viewingCabinetId} onBack={() => setViewingCabinetId(null)} />
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <div className="bg-[var(--bg-color)] min-h-screen text-[var(--text-primary)] font-sans transition-colors duration-300">
