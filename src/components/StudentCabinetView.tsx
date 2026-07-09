@@ -69,17 +69,38 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
     };
   }, [activeTest]);
 
-  // Real-time Firestore sync
+  // Real-time Firestore sync (Using HTTP API fallback for unauthenticated students)
   useEffect(() => {
     setLoading(true);
     setError(null);
 
-    const docRef = doc(db, 'cabinets', cabinetId);
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setCabinet(snapshot.data() as StudentCabinet);
-      } else {
-        // Look in local storage as a guest fallback
+    if (teacherMode) {
+      // Tutor Mode - directly connect to Firestore for instant real-time sync
+      const docRef = doc(db, 'cabinets', cabinetId);
+      const unsubscribe = onSnapshot(docRef, (snapshot) => {
+        if (snapshot.exists()) {
+          setCabinet(snapshot.data() as StudentCabinet);
+        } else {
+          // Look in local storage as a guest fallback
+          const localData = localStorage.getItem('tutor_local_cabinets');
+          if (localData) {
+            try {
+              const parsed = JSON.parse(localData) as Record<string, StudentCabinet>;
+              if (parsed[cabinetId]) {
+                setCabinet(parsed[cabinetId]);
+                setLoading(false);
+                return;
+              }
+            } catch (e) {
+              console.error('Failed to parse local cabinets:', e);
+            }
+          }
+          setError('Кабинет не найден. Пожалуйста, обратитесь к вашему преподавателю за верной ссылкой!');
+        }
+        setLoading(false);
+      }, (err) => {
+        console.error('Error loading cabinet:', err);
+        // Fallback
         const localData = localStorage.getItem('tutor_local_cabinets');
         if (localData) {
           try {
@@ -89,33 +110,75 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
               setLoading(false);
               return;
             }
-          } catch (e) {
-            console.error('Failed to parse local cabinets:', e);
+          } catch {}
+        }
+        setError('Ошибка при загрузке кабинета. Проверьте подключение к Интернету.');
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } else {
+      // Student Mode - use standard HTTP API to fetch cabinet data, bypassing Firestore gRPC/WebSocket ports entirely
+      let isMounted = true;
+      let intervalId: any;
+
+      const fetchCabinet = async (showLoading = false) => {
+        if (showLoading) setLoading(true);
+        try {
+          const res = await fetch(`/api/cabinet/${cabinetId}`);
+          if (!res.ok) {
+            throw new Error(`HTTP error ${res.status}`);
+          }
+          const result = await res.json();
+          if (isMounted) {
+            if (result.success && result.data) {
+              setCabinet(result.data);
+              setError(null);
+            } else {
+              setError('Кабинет не найден. Обратитесь к вашему преподавателю за верной ссылкой!');
+            }
+          }
+        } catch (err) {
+          console.error('API error loading cabinet:', err);
+          if (isMounted) {
+            // LocalStorage fallback for offline capability
+            const localData = localStorage.getItem('tutor_local_cabinets');
+            if (localData) {
+              try {
+                const parsed = JSON.parse(localData) as Record<string, StudentCabinet>;
+                if (parsed[cabinetId]) {
+                  setCabinet(parsed[cabinetId]);
+                  setError(null);
+                  setLoading(false);
+                  return;
+                }
+              } catch {}
+            }
+            if (showLoading) {
+              setError('Не удалось загрузить данные кабинета. Проверьте подключение к Интернету.');
+            }
+          }
+        } finally {
+          if (isMounted && showLoading) {
+            setLoading(false);
           }
         }
-        setError('Кабинет не найден. Пожалуйста, обратитесь к вашему преподавателю за верной ссылкой!');
-      }
-      setLoading(false);
-    }, (err) => {
-      console.error('Error loading cabinet:', err);
-      // Fallback
-      const localData = localStorage.getItem('tutor_local_cabinets');
-      if (localData) {
-        try {
-          const parsed = JSON.parse(localData) as Record<string, StudentCabinet>;
-          if (parsed[cabinetId]) {
-            setCabinet(parsed[cabinetId]);
-            setLoading(false);
-            return;
-          }
-        } catch {}
-      }
-      setError('Ошибка при загрузке кабинета. Проверьте подключение к Интернету.');
-      setLoading(false);
-    });
+      };
 
-    return () => unsubscribe();
-  }, [cabinetId]);
+      // Initial HTTP load
+      fetchCabinet(true);
+
+      // Lightweight polling every 12 seconds to detect newly assigned tests by tutor
+      intervalId = setInterval(() => {
+        fetchCabinet(false);
+      }, 12000);
+
+      return () => {
+        isMounted = false;
+        clearInterval(intervalId);
+      };
+    }
+  }, [cabinetId, teacherMode]);
 
   if (loading) {
     return (
@@ -301,10 +364,27 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
     }, 100);
 
     // Sync to cloud in the background without blocking the UI
-    const docRef = doc(db, 'cabinets', cabinetId);
-    setDoc(docRef, updatedCabinet, { merge: true }).catch((e) => {
-      console.error('Failed to update cabinet on cloud:', e);
-    });
+    if (!teacherMode) {
+      // Student Mode - Save results through our standard API route
+      fetch('/api/submit-test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          cabinetId,
+          cabinetData: updatedCabinet
+        })
+      }).catch((e) => {
+        console.error('Failed to update cabinet on cloud via API:', e);
+      });
+    } else {
+      // Teacher Mode - Save directly using Firestore client SDK
+      const docRef = doc(db, 'cabinets', cabinetId);
+      setDoc(docRef, updatedCabinet, { merge: true }).catch((e) => {
+        console.error('Failed to update cabinet on cloud:', e);
+      });
+    }
   };
 
   // Visual Custom SVG line chart for Progress Curve
