@@ -148,7 +148,7 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
   const completedTests = assignedTests.filter(t => t.status === 'submitted');
 
   // Extract all unique task numbers from completed tests for the progress table
-  const allTaskNumbers = React.useMemo(() => {
+  const allTaskNumbers = (() => {
     const numbers = new Set<string>();
     completedTests.forEach(test => {
       test.questions.forEach(q => {
@@ -166,7 +166,7 @@ export const StudentCabinetView: React.FC<StudentCabinetViewProps> = ({ cabinetI
       }
       return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [completedTests]);
+  })();
 
   const getCellStatus = (test: AssignedTest, taskNum: string) => {
     const matchingQuestions = test.questions.filter(q => (q.taskNumber || q.text || '').trim() === taskNum);
