@@ -18,7 +18,7 @@ import {
   HelpCircle, RefreshCw, AlertCircle, BookOpen, Layers,
   Calendar, FileText, Cloud, CloudOff, Award, ClipboardList,
   ChevronLeft, ChevronRight, X, Trash2, ArrowUp, Sparkles, Moon,
-  Home
+  Home, Heart
 } from 'lucide-react';
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -74,8 +74,152 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
   
-  // Quick Notes state
-  const [quickNotes, setQuickNotes] = useState<string>(() => localStorage.getItem('quick_notes') || '');
+  interface QuickTodo {
+    id: string;
+    text: string;
+    completed: boolean;
+    completedAtDate?: string;
+  }
+
+  // Quick Notes as structured Todo list
+  const [quickTodos, setQuickTodos] = useState<QuickTodo[]>(() => {
+    const stored = localStorage.getItem('quick_notes_todos');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      } catch (e) {
+        console.error("Failed to parse quick_notes_todos JSON, trying plain text migration...", e);
+      }
+    }
+    
+    // Migration from old plain text 'quick_notes'
+    const oldNotes = localStorage.getItem('quick_notes');
+    if (oldNotes) {
+      const lines = oldNotes.split('\n');
+      const parsedTodos: QuickTodo[] = [];
+      lines.forEach((line, idx) => {
+        const cleaned = line.replace(/^[•\-\*\s]+/, '').trim();
+        if (cleaned) {
+          parsedTodos.push({
+            id: `todo-migrated-${idx}-${Date.now()}`,
+            text: cleaned,
+            completed: false,
+          });
+        }
+      });
+      if (parsedTodos.length > 0) {
+        return parsedTodos;
+      }
+    }
+    
+    // Default items
+    return [
+      { id: '1', text: 'Позвонить маме 💖', completed: false },
+      { id: '2', text: 'Заполнить расписание на неделю 📅', completed: false },
+      { id: '3', text: 'Выпить стакан воды 💧', completed: false }
+    ];
+  });
+
+  const [newTodoText, setNewTodoText] = useState('');
+  const [isTodoCollapsedMobile, setIsTodoCollapsedMobile] = useState<boolean>(() => {
+    // Default to true (collapsed) on mobile so it looks tidy, but let user change and persist it
+    const stored = localStorage.getItem('is_todo_collapsed_mobile');
+    return stored === null ? true : stored === 'true';
+  });
+
+  const toggleTodoCollapse = () => {
+    setIsTodoCollapsedMobile(prev => {
+      const next = !prev;
+      localStorage.setItem('is_todo_collapsed_mobile', String(next));
+      return next;
+    });
+  };
+
+  // Helper to get local date string (YYYY-MM-DD)
+  const getTodayDateString = () => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  };
+
+  // Helper to clean expired todos
+  const cleanExpiredTodos = (todos: QuickTodo[]): { cleaned: QuickTodo[], changed: boolean } => {
+    const todayStr = getTodayDateString();
+    let changed = false;
+    const filtered = todos.filter(todo => {
+      if (todo.completed && todo.completedAtDate && todo.completedAtDate < todayStr) {
+        changed = true;
+        return false;
+      }
+      return true;
+    });
+    return { cleaned: filtered, changed };
+  };
+
+  // Effect to clean up completed/crossed-out items at midnight
+  useEffect(() => {
+    // Initial check on mount
+    setQuickTodos(prev => {
+      const { cleaned, changed } = cleanExpiredTodos(prev);
+      if (changed) {
+        localStorage.setItem('quick_notes_todos', JSON.stringify(cleaned));
+        return cleaned;
+      }
+      return prev;
+    });
+
+    // Check every 15 seconds for a date change
+    const interval = setInterval(() => {
+      setQuickTodos(prev => {
+        const { cleaned, changed } = cleanExpiredTodos(prev);
+        if (changed) {
+          localStorage.setItem('quick_notes_todos', JSON.stringify(cleaned));
+          return cleaned;
+        }
+        return prev;
+      });
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleToggleTodo = (id: string) => {
+    const updated = quickTodos.map(todo => {
+      if (todo.id === id) {
+        const completed = !todo.completed;
+        return {
+          ...todo,
+          completed,
+          completedAtDate: completed ? getTodayDateString() : undefined
+        };
+      }
+      return todo;
+    });
+    setQuickTodos(updated);
+    localStorage.setItem('quick_notes_todos', JSON.stringify(updated));
+  };
+
+  const handleAddTodo = (text: string) => {
+    if (!text.trim()) return;
+    const newTodo: QuickTodo = {
+      id: `todo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      text: text.trim(),
+      completed: false
+    };
+    const updated = [...quickTodos, newTodo];
+    setQuickTodos(updated);
+    localStorage.setItem('quick_notes_todos', JSON.stringify(updated));
+  };
+
+  const handleDeleteTodo = (id: string) => {
+    const updated = quickTodos.filter(todo => todo.id !== id);
+    setQuickTodos(updated);
+    localStorage.setItem('quick_notes_todos', JSON.stringify(updated));
+  };
   
   // Interactive Calendar Reminders
   const [reminders, setReminders] = useState<CalendarReminder[]>(() => {
@@ -703,74 +847,124 @@ export default function App() {
               {/* Left Column: Quick Notes / Todo Desk & Active Pink Reminders */}
               <div className="lg:col-span-8 flex flex-col sm:flex-row items-stretch gap-6">
                 
-                {/* Note desk */}
-                <div className="flex flex-col space-y-2 shrink-0">
-                  <div className="flex items-center gap-2 text-[10px] md:text-xs font-sans uppercase text-[#F4B5CD] tracking-widest font-extrabold animate-pulse">
-                    <ClipboardList className="w-3.5 h-3.5 text-[#F4B5CD]" />
-                    <span>НИКУСЬКА НЕ ЗАБУДЬ!!!!</span>
+                {/* Note desk / Todo list */}
+                <div id="quick-todos-card" className="flex-1 flex flex-col space-y-2 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-sans uppercase text-[#F4B5CD] tracking-widest font-extrabold animate-pulse">
+                      <ClipboardList className="w-3 h-3 text-[#F4B5CD]" />
+                      <span>НИКУСЬКА НЕ ЗАБУДЬ!!!!</span>
+                      {quickTodos.filter(t => !t.completed).length > 0 && (
+                        <span className="bg-[#F4B5CD]/25 text-[#F4B5CD] px-1.5 py-0.5 rounded-full text-[8px] font-bold">
+                          {quickTodos.filter(t => !t.completed).length}
+                        </span>
+                      )}
+                    </div>
+                    {/* Collapsible toggle on mobile only */}
+                    <button
+                      type="button"
+                      onClick={toggleTodoCollapse}
+                      className="sm:hidden text-[9px] bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 active:scale-95 text-[#F4B5CD] border border-[#F4B5CD]/25 px-2 py-0.5 rounded-lg transition duration-200 cursor-pointer"
+                    >
+                      {isTodoCollapsedMobile ? 'Развернуть 🌸' : 'Свернуть 👆'}
+                    </button>
                   </div>
-                  <div className="relative group">
-                    <textarea
-                      value={quickNotes}
-                      spellCheck="false"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      onChange={(e) => {
-                        let val = e.target.value;
-                        if (val && !val.startsWith('•')) {
-                          val = '• ' + val;
+                  
+                  {isTodoCollapsedMobile && (
+                    /* Compact placeholder on mobile */
+                    <div 
+                      onClick={toggleTodoCollapse}
+                      className="sm:hidden bg-gradient-to-br from-[#12131a]/50 via-[#12131a]/60 to-[#F4B5CD]/[0.05] border border-white/5 rounded-2xl p-3 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] active:scale-[0.99] transition duration-200 shadow-md"
+                    >
+                      <span className="text-[11px] text-white/50 flex items-center gap-2">
+                        <Heart className="w-3 h-3 text-[#F4B5CD]" />
+                        <span>Дела Никуськи:</span>
+                        <span className="text-white/80 font-medium">
+                          {quickTodos.filter(t => !t.completed).length} активных
+                        </span>
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-white/30" />
+                    </div>
+                  )}
+
+                  <div className={`bg-gradient-to-br from-[#12131a]/50 via-[#12131a]/60 to-[#F4B5CD]/[0.05] border border-white/5 rounded-2xl p-4 flex-1 flex flex-col justify-between shadow-lg transition-all duration-300 ${
+                    isTodoCollapsedMobile ? 'hidden sm:flex min-h-[192px]' : 'flex min-h-[210px] sm:min-h-[192px]'
+                  }`}>
+                    <div className="space-y-2 overflow-y-auto no-scrollbar max-h-[160px] pr-1 flex-1">
+                      {quickTodos.length === 0 ? (
+                        <div className="text-center text-[10px] text-white/20 italic py-8">
+                          Никуська, всё сделано! Ты умничка 🌸
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          {quickTodos.map(todo => (
+                            <div 
+                              key={todo.id} 
+                              className="group flex items-center justify-between gap-2 p-1 rounded-xl hover:bg-white/[0.02] transition duration-150"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleTodo(todo.id)}
+                                  className="p-1 rounded-full hover:bg-white/5 active:scale-90 transition duration-150 cursor-pointer shrink-0"
+                                  title={todo.completed ? "Отметить как невыполненное" : "Отметить как выполненное"}
+                                >
+                                  {todo.completed ? (
+                                    <Heart className="w-3.5 h-3.5 text-[#F4B5CD] fill-[#F4B5CD] animate-pulse" />
+                                  ) : (
+                                    <Heart className="w-3.5 h-3.5 text-[#F4B5CD]/35 hover:text-[#F4B5CD]/70 hover:scale-110 transition-all" />
+                                  )}
+                                </button>
+                                <span 
+                                  className={`text-[11px] transition-all duration-250 truncate cursor-pointer select-none ${
+                                    todo.completed 
+                                      ? 'line-through text-white/30 italic decoration-[#F4B5CD]/40' 
+                                      : 'text-white/80 font-medium'
+                                  }`}
+                                  onClick={() => handleToggleTodo(todo.id)}
+                                >
+                                  {todo.text}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTodo(todo.id)}
+                                className="opacity-0 group-hover:opacity-100 p-1 text-white/25 hover:text-rose-400 transition duration-150 cursor-pointer shrink-0"
+                                title="Удалить дело"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Interactive Input Form */}
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (newTodoText.trim()) {
+                          handleAddTodo(newTodoText);
+                          setNewTodoText('');
                         }
-                        setQuickNotes(val);
-                        localStorage.setItem('quick_notes', val);
-                      }}
-                      onBlur={() => {
-                        const cleaned = quickNotes
-                          .split('\n')
-                          .map(line => line.trim())
-                          .filter(line => line !== '•' && line !== '• ' && line !== '')
-                          .map(line => line.startsWith('•') ? line : `• ${line}`)
-                          .join('\n');
-                        setQuickNotes(cleaned);
-                        localStorage.setItem('quick_notes', cleaned);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const textarea = e.currentTarget;
-                          const start = textarea.selectionStart;
-                          const end = textarea.selectionEnd;
-                          const val = textarea.value;
-
-                          const before = val.substring(0, start);
-                          const after = val.substring(end);
-
-                          const linesBefore = before.split('\n');
-                          const currentLine = linesBefore[linesBefore.length - 1];
-
-                          if (currentLine.trim() === '•') {
-                            const newBefore = linesBefore.slice(0, -1).join('\n') + '\n';
-                            const newVal = newBefore + after;
-                            setQuickNotes(newVal);
-                            localStorage.setItem('quick_notes', newVal);
-                            setTimeout(() => {
-                              textarea.selectionStart = textarea.selectionEnd = newBefore.length;
-                            }, 0);
-                            return;
-                          }
-
-                          const insertText = '\n• ';
-                          const newVal = before + insertText + after;
-                          setQuickNotes(newVal);
-                          localStorage.setItem('quick_notes', newVal);
-
-                          setTimeout(() => {
-                            textarea.selectionStart = textarea.selectionEnd = start + insertText.length;
-                          }, 0);
-                        }
-                      }}
-                      placeholder="Впишите сюда важные дела, напоминания..."
-                      className="w-48 h-48 bg-[#12131a]/40 hover:bg-[#12131a]/60 focus:bg-[#12131a]/80 border border-white/10 hover:border-white/15 focus:border-[#F4B5CD]/40 text-white/60 placeholder-white/20 text-xs rounded-xl p-3 focus:outline-none focus:ring-1 focus:ring-[#F4B5CD]/20 transition duration-200 resize-none font-sans leading-relaxed text-left"
-                    />
+                      }} 
+                      className="mt-2.5 flex items-center gap-2 border-t border-white/5 pt-2"
+                    >
+                      <input
+                        type="text"
+                        value={newTodoText}
+                        onChange={(e) => setNewTodoText(e.target.value)}
+                        placeholder="Добавить новую запись..."
+                        className="flex-1 bg-white/[0.03] border border-white/5 focus:border-[#F4B5CD]/40 text-[10px] rounded-xl py-1 px-2.5 text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-[#F4B5CD]/20 transition duration-200"
+                      />
+                      <button
+                        type="submit"
+                        className="p-1 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 border border-[#F4B5CD]/20 text-[#F4B5CD] rounded-lg transition cursor-pointer flex items-center justify-center shrink-0"
+                        title="Добавить"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </form>
                   </div>
                 </div>
 
