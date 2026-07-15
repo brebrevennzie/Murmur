@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SyllabusProgram, CalendarReminder, StudentCabinet, MockExam, TestTemplate } from './types';
+import { Student, SyllabusProgram, CalendarReminder, MockExam } from './types';
 import { getInitialStudents, saveStudents, INITIAL_STUDENTS, getInitialPrograms, savePrograms } from './data';
 import { syncAllStudents } from './utils/paymentSync';
 import { safeStorage } from './utils/safeStorage';
@@ -18,67 +18,33 @@ import {
   HelpCircle, RefreshCw, AlertCircle, BookOpen, Layers,
   Calendar, FileText, Cloud, CloudOff, Award, ClipboardList,
   ChevronLeft, ChevronRight, X, Trash2, ArrowUp, Sparkles, Moon,
-  Home, Eye
+  Home
 } from 'lucide-react';
 import { GradingCriteriaModal } from './components/GradingCriteriaModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PassMockModal } from './components/PassMockModal';
 import { WaterTracker } from './components/WaterTracker';
 import { UsefulLinks } from './components/UsefulLinks';
-import { TestLibrary } from './components/TestLibrary';
-import { StudentCabinetView } from './components/StudentCabinetView';
+import { SecretNotes } from './components/SecretNotes';
 
-const getCabinetIdFromUrl = () => {
-  if (typeof window === 'undefined') return null;
-  
-  // 1. Try standard query params in window.location.search
-  const searchParams = new URLSearchParams(window.location.search);
-  let cab = searchParams.get('cabinet') || searchParams.get('cab');
-  if (cab) return cab;
-  
-  // 2. Try query params inside window.location.hash (e.g. #/?cabinet=cab-xxx)
-  const hash = window.location.hash;
-  if (hash) {
-    const qIndex = hash.indexOf('?');
-    if (qIndex !== -1) {
-      const hashParams = new URLSearchParams(hash.substring(qIndex));
-      cab = hashParams.get('cabinet') || hashParams.get('cab');
-      if (cab) return cab;
-    }
-    
-    // Fallback: simple regex search for cabinet=... or cab=... in the hash
-    const match = hash.match(/[?&](cabinet|cab)=([^&]+)/) || hash.match(/#(cabinet|cab)=([^&]+)/);
-    if (match && match[2]) {
-      return match[2];
-    }
-    
-    // Secondary fallback: if hash is just cabinet ID or starts with it
-    if (hash.includes('cabinet=')) {
-      const part = hash.split('cabinet=')[1];
-      if (part) {
-        return part.split('&')[0];
-      }
-    }
-    if (hash.includes('cab=')) {
-      const part = hash.split('cab=')[1];
-      if (part) {
-        return part.split('&')[0];
-      }
-    }
-  }
-  
-  return null;
-};
+export const NeonCrossIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path 
+      d="M12 3v18M7 9h10" 
+      stroke="#F4B5CD" 
+      strokeWidth="2.5" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+      style={{ filter: 'drop-shadow(0px 0px 4px rgba(244, 181, 205, 0.75))' }}
+    />
+  </svg>
+);
 
 export default function App() {
-  const [viewingCabinetId, setViewingCabinetId] = useState<string | null>(null);
-
-  const cabinetIdFromUrl = getCabinetIdFromUrl();
-
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'links' | 'tests'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'links' | 'secret_notes'>('dashboard');
 
   // Dynamic Theme (gothic or cosmic)
   const [theme, setTheme] = useState<'gothic' | 'cosmic'>(() => {
@@ -254,228 +220,6 @@ export default function App() {
     }
   }, []);
 
-  // Cabinets state (lifted up for global dashboard sync, cards & parent reports)
-  const [cabinets, setCabinets] = useState<Record<string, StudentCabinet>>(() => {
-    const stored = safeStorage.getItem('tutor_local_cabinets');
-    try {
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  // Real-time listener for Tutor's Cabinets in Firestore (handles both logged-in and guest tutors)
-  useEffect(() => {
-    let unsubscribes: (() => void)[] = [];
-
-    if (user) {
-      const q = query(collection(db, 'cabinets'), where('tutorId', '==', user.uid));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const dbCabs: Record<string, StudentCabinet> = {};
-        snapshot.forEach((doc) => {
-          dbCabs[doc.id] = doc.data() as StudentCabinet;
-        });
-
-        setCabinets(prev => {
-          const merged = { ...prev, ...dbCabs };
-          safeStorage.setItem('tutor_local_cabinets', JSON.stringify(merged));
-          return merged;
-        });
-      }, (error) => {
-        console.error('Error listening to cabinets in Firestore:', error);
-      });
-      unsubscribes.push(unsubscribe);
-    } else {
-      // Guest tutor: subscribe to cabinets of their local students for seamless instant sync
-      const cabIds = students.map(s => s.cabinetId).filter(Boolean) as string[];
-      cabIds.forEach(cabId => {
-        const docRef = doc(db, 'cabinets', cabId);
-        const unsubscribe = onSnapshot(docRef, (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data() as StudentCabinet;
-            setCabinets(prev => {
-              const updated = { ...prev, [cabId]: data };
-              safeStorage.setItem('tutor_local_cabinets', JSON.stringify(updated));
-              return updated;
-            });
-          }
-        });
-        unsubscribes.push(unsubscribe);
-      });
-    }
-
-    return () => {
-      unsubscribes.forEach(unsub => unsub());
-    };
-  }, [user, students.map(s => s.cabinetId).join(',')]);
-
-  // Helper to save cabinets locally and sync to Cloud
-  const handleUpdateCabinets = async (updatedCabs: Record<string, StudentCabinet>) => {
-    setCabinets(updatedCabs);
-    safeStorage.setItem('tutor_local_cabinets', JSON.stringify(updatedCabs));
-
-    try {
-      for (const [cabId, cab] of Object.entries(updatedCabs)) {
-        // 1. First sync through our backend API which runs server-side (immune to ISP/VPN blocks)
-        await fetch('/api/submit-test', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            cabinetId: cabId,
-            cabinetData: cab
-          })
-        }).then(async (res) => {
-          if (!res.ok) {
-            console.warn(`Backend API sync returned non-OK status: ${res.status}`);
-          }
-        }).catch((e) => {
-          console.error('Failed to sync cabinet via Backend API, trying direct Firestore client-side:', e);
-        });
-
-        // 2. Secondary/fallback sync via direct Firestore client-side SDK
-        const docRef = doc(db, 'cabinets', cabId);
-        await setDoc(docRef, cab, { merge: true });
-      }
-    } catch (err) {
-      console.error('Failed to sync updated cabinet to cloud:', err);
-    }
-  };
-
-  // Test templates state
-  const [testTemplates, setTestTemplates] = useState<TestTemplate[]>(() => {
-    const stored = safeStorage.getItem('tutor_local_test_templates');
-    try {
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Real-time listener for test templates in Firestore
-  useEffect(() => {
-    if (user) {
-      const q = query(collection(db, 'test_templates'), where('tutorId', '==', user.uid));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const dbTemplates: TestTemplate[] = [];
-        snapshot.forEach((doc) => {
-          dbTemplates.push({ id: doc.id, ...doc.data() } as TestTemplate);
-        });
-        setTestTemplates(dbTemplates);
-        safeStorage.setItem('tutor_local_test_templates', JSON.stringify(dbTemplates));
-      }, (error) => {
-        console.error('Error listening to templates in Firestore:', error);
-      });
-      return unsubscribe;
-    }
-  }, [user]);
-
-  // Handler to update/save test templates
-  const handleSaveTestTemplate = async (template: TestTemplate) => {
-    const exists = testTemplates.some(t => t.id === template.id);
-    const updated = exists
-      ? testTemplates.map(t => t.id === template.id ? template : t)
-      : [template, ...testTemplates];
-
-    setTestTemplates(updated);
-    safeStorage.setItem('tutor_local_test_templates', JSON.stringify(updated));
-
-    if (user) {
-      try {
-        const docRef = doc(db, 'test_templates', template.id);
-        await setDoc(docRef, { ...template, tutorId: user.uid }, { merge: true });
-      } catch (err) {
-        console.error('Failed to sync template to Firestore:', err);
-      }
-    }
-  };
-
-  // Handler to delete test template
-  const handleDeleteTestTemplate = async (templateId: string) => {
-    const updated = testTemplates.filter(t => t.id !== templateId);
-    setTestTemplates(updated);
-    safeStorage.setItem('tutor_local_test_templates', JSON.stringify(updated));
-
-    if (user) {
-      try {
-        const { deleteDoc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'test_templates', templateId));
-      } catch (err) {
-        console.error('Failed to delete template from Firestore:', err);
-      }
-    }
-  };
-
-  // Auto cabinet checking for Russian subject students
-  const [hasAutoCheckedCabinets, setHasAutoCheckedCabinets] = useState(false);
-
-  useEffect(() => {
-    if (hasAutoCheckedCabinets || students.length === 0) return;
-    
-    let studentsUpdated = false;
-    const updatedStudents = [...students];
-    const updatedCabs = { ...cabinets };
-    let cabsUpdated = false;
-
-    updatedStudents.forEach((student, index) => {
-      const isRussian = student.isActive && (student.subject || '').toLowerCase().includes('рус');
-      if (isRussian) {
-        let cabId = student.cabinetId;
-        const cabExists = cabId && cabinets[cabId];
-        if (!cabExists) {
-          if (!cabId) {
-            cabId = `cab-${Math.random().toString(36).substring(2, 11)}`;
-            updatedStudents[index] = { ...student, cabinetId: cabId };
-            studentsUpdated = true;
-          }
-          updatedCabs[cabId] = {
-            id: cabId,
-            studentId: student.id,
-            studentName: student.name,
-            tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
-            createdAt: new Date().toISOString(),
-            assignedTests: []
-          };
-          cabsUpdated = true;
-        }
-      }
-    });
-
-    if (studentsUpdated) {
-      handleUpdateStudents(updatedStudents);
-    }
-    if (cabsUpdated) {
-      handleUpdateCabinets(updatedCabs);
-    }
-    setHasAutoCheckedCabinets(true);
-  }, [students, cabinets, user, hasAutoCheckedCabinets]);
-
-  // Migrate guest cabinets to logged-in user if any exist locally
-  useEffect(() => {
-    if (user) {
-      const stored = safeStorage.getItem('tutor_local_cabinets');
-      if (stored) {
-        try {
-          const localCabs = JSON.parse(stored) as Record<string, StudentCabinet>;
-          let migrated = false;
-          const updatedCabs = { ...localCabs };
-          for (const [id, cab] of Object.entries(updatedCabs)) {
-            if (cab.tutorId !== user.uid) {
-              updatedCabs[id] = { ...cab, tutorId: user.uid };
-              migrated = true;
-            }
-          }
-          if (migrated) {
-            handleUpdateCabinets(updatedCabs);
-          }
-        } catch (e) {
-          console.error('Failed to migrate guest cabinets:', e);
-        }
-      }
-    }
-  }, [user]);
-
   const updateTimestamp = () => {
     const timestamp = new Date().toISOString();
     safeStorage.setItem('tutor_db_last_updated', timestamp);
@@ -508,50 +252,15 @@ export default function App() {
 
   // Add individual student
   const handleAddStudent = (newStudent: Student) => {
-    let studentToCreate = { ...newStudent };
-    const isRussian = studentToCreate.isActive && (studentToCreate.subject || '').toLowerCase().includes('рус');
-    if (isRussian) {
-      const cabId = studentToCreate.cabinetId || `cab-${Math.random().toString(36).substring(2, 11)}`;
-      studentToCreate.cabinetId = cabId;
-      const newCabinet: StudentCabinet = {
-        id: cabId,
-        studentId: studentToCreate.id,
-        studentName: studentToCreate.name,
-        tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
-        createdAt: new Date().toISOString(),
-        assignedTests: []
-      };
-      // Immediately save the cabinet too
-      const updatedCabs = { ...cabinets, [cabId]: newCabinet };
-      handleUpdateCabinets(updatedCabs);
-    }
-    const updated = [...students, studentToCreate];
+    const updated = [...students, newStudent];
     handleUpdateStudents(updated);
     setShowAddModal(false);
-    setHasAutoCheckedCabinets(false);
   };
 
   // Update specific student (when edited in their cabinet)
   const handleUpdateStudent = (updatedStudent: Student) => {
-    let studentToUpdate = { ...updatedStudent };
-    const isRussian = studentToUpdate.isActive && (studentToUpdate.subject || '').toLowerCase().includes('рус');
-    if (isRussian && !studentToUpdate.cabinetId) {
-      const cabId = `cab-${Math.random().toString(36).substring(2, 11)}`;
-      studentToUpdate.cabinetId = cabId;
-      const newCabinet: StudentCabinet = {
-        id: cabId,
-        studentId: studentToUpdate.id,
-        studentName: studentToUpdate.name,
-        tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
-        createdAt: new Date().toISOString(),
-        assignedTests: []
-      };
-      const updatedCabs = { ...cabinets, [cabId]: newCabinet };
-      handleUpdateCabinets(updatedCabs);
-    }
-    const updated = students.map(s => s.id === studentToUpdate.id ? studentToUpdate : s);
+    const updated = students.map(s => s.id === updatedStudent.id ? updatedStudent : s);
     handleUpdateStudents(updated);
-    setHasAutoCheckedCabinets(false);
   };
 
   // Save mock from modal
@@ -688,22 +397,6 @@ export default function App() {
     }
     return false;
   }, []);
-
-  if (cabinetIdFromUrl) {
-    return (
-      <ErrorBoundary>
-        <StudentCabinetView cabinetId={cabinetIdFromUrl} />
-      </ErrorBoundary>
-    );
-  }
-
-  if (viewingCabinetId) {
-    return (
-      <ErrorBoundary>
-        <StudentCabinetView cabinetId={viewingCabinetId} onBack={() => setViewingCabinetId(null)} />
-      </ErrorBoundary>
-    );
-  }
 
   return (
     <div className="bg-[var(--bg-color)] min-h-screen text-[var(--text-primary)] font-sans transition-colors duration-300">
@@ -884,31 +577,30 @@ export default function App() {
                 setSelectedStudentId(null);
                 setFilterDebtOnly(false);
               }}
-              className={`cursor-pointer transition duration-200 pb-1 flex items-center gap-0.5 ${
+              className={`cursor-pointer transition duration-200 pb-1 flex items-center justify-center ${
                 activeTab === 'links' && !selectedStudentId
-                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
-                  : 'text-white/40 hover:text-white'
+                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold scale-110' 
+                  : 'text-white/40 hover:text-white hover:scale-110'
               }`}
               title="Полезные ссылки"
             >
-              <Eye className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              <Eye className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <NeonCrossIcon className="w-5 h-5 shrink-0" />
             </button>
 
             <button
               onClick={() => {
-                setActiveTab('tests');
+                setActiveTab('secret_notes');
                 setSelectedStudentId(null);
                 setFilterDebtOnly(false);
               }}
               className={`cursor-pointer transition duration-200 pb-1 flex items-center justify-center ${
-                activeTab === 'tests' && !selectedStudentId
-                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold' 
-                  : 'text-white/40 hover:text-white'
+                activeTab === 'secret_notes' && !selectedStudentId
+                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold scale-110' 
+                  : 'text-white/40 hover:text-white hover:scale-110'
               }`}
-              title="Тесты и Варианты"
+              title="Секретные заметки"
             >
-              <ClipboardList className="w-4 h-4 text-purple-400 shrink-0" />
+              <Moon className="w-4.5 h-4.5 text-[#F4B5CD] shrink-0" />
             </button>
           </div>
         </div>
@@ -919,15 +611,9 @@ export default function App() {
             title={theme === 'gothic' ? 'Активировать космическую тему' : 'Активировать черно-красную готическую тему'}
           >
             {theme === 'gothic' ? (
-              <>
-                <Sparkles className="w-3.5 h-3.5 text-[#F4B5CD]" />
-                <span className="text-[9px] uppercase font-bold tracking-wider">Космос</span>
-              </>
+              <Sparkles className="w-4 h-4 text-[#F4B5CD]" />
             ) : (
-              <>
-                <Moon className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-                <span className="text-[9px] uppercase font-bold tracking-wider">Готика</span>
-              </>
+              <Moon className="w-4 h-4 text-rose-400 animate-pulse" />
             )}
           </button>
 
@@ -977,14 +663,9 @@ export default function App() {
         <div className="animate-fadeIn">
           <StudentDetail 
             student={selectedStudent}
-            cabinet={selectedStudent.cabinetId ? cabinets[selectedStudent.cabinetId] : null}
-            cabinets={cabinets}
             onBack={() => setSelectedStudentId(null)}
             onUpdateStudent={handleUpdateStudent}
-            onUpdateCabinets={handleUpdateCabinets}
             user={user}
-            testTemplates={testTemplates}
-            onOpenCabinet={setViewingCabinetId}
           />
           
           {/* Advanced Danger Option inside Cabinet detail */}
@@ -1007,18 +688,9 @@ export default function App() {
         <div className="animate-fadeIn opacity-90 text-white/85 py-6">
           <UsefulLinks />
         </div>
-      ) : activeTab === 'tests' ? (
+      ) : activeTab === 'secret_notes' ? (
         <div className="animate-fadeIn opacity-90 text-white/85 py-6">
-          <TestLibrary
-            templates={testTemplates}
-            onSaveTemplate={handleSaveTestTemplate}
-            onDeleteTemplate={handleDeleteTestTemplate}
-            students={students}
-            cabinets={cabinets}
-            onUpdateCabinets={handleUpdateCabinets}
-            onUpdateStudent={handleUpdateStudent}
-            user={user}
-          />
+          <SecretNotes />
         </div>
       ) : (
         /* Home Workspace view */
@@ -1409,9 +1081,9 @@ export default function App() {
                   <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto text-white/30 border border-white/10">
                     <BookOpen className="w-6 h-6 text-[#F4B5CD]" />
                   </div>
-                  <h3 className="font-serif text-lg text-white">Кабинеты не найдены</h3>
+                  <h3 className="font-serif text-lg text-white">Ученики не найдены</h3>
                   <p className="text-xs text-white/50 leading-relaxed font-light">
-                    Нет активных кабинетов учащихся, соответствующих заданным критериям поиска. Вы можете зарегистрировать новый профиль ученика в системе за одну минуту.
+                    Нет активных учащихся, соответствующих заданным критериям поиска. Вы можете зарегистрировать новый профиль ученика в системе за одну минуту.
                   </p>
                   <button
                     onClick={() => setShowAddModal(true)}
@@ -1426,7 +1098,6 @@ export default function App() {
                     <StudentCard 
                       key={student.id}
                       student={student}
-                      cabinet={student.cabinetId ? cabinets[student.cabinetId] : null}
                       onSelect={() => setSelectedStudentId(student.id)}
                       onPassMock={() => setPassMockStudentId(student.id)}
                     />

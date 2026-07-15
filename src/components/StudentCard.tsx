@@ -1,15 +1,14 @@
 import React from 'react';
-import { Student, StudentCabinet } from '../types';
+import { Student } from '../types';
 import { BookOpen, Calendar, CircleDot, DollarSign, Award, Laptop } from 'lucide-react';
 
 interface StudentCardProps {
   student: Student;
-  cabinet?: StudentCabinet | null;
   onSelect: () => void;
   onPassMock: (e: React.MouseEvent) => void;
 }
 
-export const StudentCard: React.FC<StudentCardProps> = ({ student, cabinet, onSelect, onPassMock }) => {
+export const StudentCard: React.FC<StudentCardProps> = ({ student, onSelect, onPassMock }) => {
   // Compute average mock score
   const mockCount = (student.mockExams || []).length;
   const avgPct = mockCount > 0 

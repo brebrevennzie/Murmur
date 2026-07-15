@@ -82,7 +82,10 @@ export const SvgChart: React.FC<SvgChartProps> = ({ points }) => {
   const yLevels = [0, 25, 50, 75, 100];
 
   return (
-    <div className="relative bg-gradient-to-br from-[#F4B5CD]/[0.03] via-white/[0.01] to-white/[0.01] backdrop-blur-xl border border-white/10 p-5 rounded-2xl shadow-xl">
+    <div 
+      onClick={() => setHoveredPoint(null)}
+      className="relative bg-gradient-to-br from-[#F4B5CD]/[0.03] via-white/[0.01] to-white/[0.01] backdrop-blur-xl border border-white/10 p-5 rounded-2xl shadow-xl select-none"
+    >
       <div className="flex justify-between items-center mb-4">
         <h4 className="font-serif text-blush-mist text-sm font-semibold">
           Динамика результатов пробников (%)
@@ -151,7 +154,7 @@ export const SvgChart: React.FC<SvgChartProps> = ({ points }) => {
           {/* Data point markers */}
           {svgPoints.map((pt, idx) => (
             <g key={idx}>
-              {/* Highlight background circle on hover */}
+              {/* Highlight background circle on hover and click for touch devices */}
               <circle
                 cx={pt.x}
                 cy={pt.y}
@@ -159,6 +162,10 @@ export const SvgChart: React.FC<SvgChartProps> = ({ points }) => {
                 className="fill-[#F4B5CD]/10 transition-all duration-150 ease-out cursor-pointer"
                 onMouseEnter={() => setHoveredPoint(idx)}
                 onMouseLeave={() => setHoveredPoint(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHoveredPoint(hoveredPoint === idx ? null : idx);
+                }}
               />
               {/* Foreground circle */}
               <circle

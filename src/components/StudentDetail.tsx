@@ -12,10 +12,9 @@ import {
   Plus, Trash2, DollarSign, BookOpen, Clock, FileText, CheckCircle, 
   HelpCircle, PenTool, ClipboardList, TrendingUp, AlertCircle,
   Video, ExternalLink, Link, X, Trash, Maximize2, Minimize2, Paperclip,
-  UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon, Upload,
-  Eye
+  UploadCloud, FolderPlus, Copy, Check, Laptop, Sparkles as SparklesIcon, Upload
 } from 'lucide-react';
-import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS, StudentCabinet, TestTemplate, AssignedTest } from '../types';
+import { Student, MockExam, Lesson, Payment, TopicGap, COVER_PRESETS } from '../types';
 
 const EMOJI_PRESETS = [
   // Учёба, Предметы и Инструменты
@@ -40,17 +39,12 @@ const getCheckedHomeworkForLesson = (lesson: Lesson, student: Student): string =
 
 interface StudentDetailProps {
   student: Student;
-  cabinet?: StudentCabinet | null;
-  cabinets?: Record<string, StudentCabinet>;
   onBack: () => void;
   onUpdateStudent: (updatedStudent: Student) => void;
-  onUpdateCabinets?: (updatedCabs: Record<string, StudentCabinet>) => void;
   user?: any;
-  testTemplates?: TestTemplate[];
-  onOpenCabinet?: (cabinetId: string) => void;
 }
 
-type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments' | 'cabinet';
+type ActiveTab = 'analytics' | 'topicGaps' | 'attendance' | 'payments';
 
 const formatDateToDDMMYY = (dateStr: string): string => {
   if (!dateStr) return '';
@@ -83,24 +77,14 @@ const isLessonRescheduledOrExtra = (lesson: Lesson, student: Student): boolean =
 
 export const StudentDetail: React.FC<StudentDetailProps> = ({ 
   student, 
-  cabinet, 
-  cabinets = {}, 
   onBack, 
   onUpdateStudent, 
-  onUpdateCabinets, 
-  user,
-  testTemplates = [],
-  onOpenCabinet
+  user
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
   const [historySubTab, setHistorySubTab] = useState<'lessons' | 'mocks'>('lessons');
   const [showParentReport, setShowParentReport] = useState(false);
   const [showPaymentReport, setShowPaymentReport] = useState(false);
-
-  // Student Cabinet teacher states
-  const [selectedTemplateToAssign, setSelectedTemplateToAssign] = useState<string>('');
-  const [viewingCabinetTest, setViewingCabinetTest] = useState<AssignedTest | null>(null);
-  const [cabinetCopied, setCabinetCopied] = useState(false);
 
   // Syllabus program states
   const [isSelectingProgram, setIsSelectingProgram] = useState(false);
@@ -1555,17 +1539,6 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
             <DollarSign className="w-4 h-4" />
             Финансы и абонементы ({student.payments.length})
           </button>
-          <button
-            onClick={() => setActiveTab('cabinet')}
-            className={`py-2 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'cabinet' 
-                ? 'border-[#F4B5CD] text-[#F4B5CD] font-bold' 
-                : 'border-transparent text-white/40 hover:text-white hover:border-white/10'
-            }`}
-          >
-            <Laptop className="w-4 h-4 text-pink-300" />
-            Личный кабинет ({cabinet ? 'активен' : 'создать'})
-          </button>
         </div>
         {activeTab === 'analytics' && (
           <div className="space-y-6">
@@ -2900,7 +2873,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Способ / Метод</label>
+                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1 font-mono">Способ / Метод</label>
                     <input 
                       type="text" 
                       placeholder="e.g. СБП (Тинькофф)"
@@ -2910,7 +2883,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Дата платежа</label>
+                    <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1 font-mono">Дата платежа</label>
                     <input 
                       type="date"
                       required
@@ -2921,7 +2894,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1">Заметки / Комментарий к оплате</label>
+                  <label className="block text-[9px] uppercase tracking-widest font-bold text-white/45 mb-1 font-mono">Заметки / Комментарий к оплате</label>
                   <input 
                     type="text"
                     placeholder="Например: Абонемент на вторую половину месяца."
@@ -2967,7 +2940,7 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                       <div key={payment.id} className="p-4 hover:bg-white/5 flex items-center justify-between gap-4 transition text-xs">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-bold text-lavender text-sm">+{payment.amount.toLocaleString()} ₽</span>
+                            <span className="font-mono font-bold text-[#F4B5CD] text-sm">+{payment.amount.toLocaleString()} ₽</span>
                             <span className="text-white/20">•</span>
                             <span className="bg-white/5 text-white/60 font-semibold px-2 py-0.5 rounded-xl border border-white/5 text-[9px] uppercase tracking-wider">
                               {payment.method || 'СБП'}
@@ -2994,388 +2967,6 @@ export const StudentDetail: React.FC<StudentDetailProps> = ({
                     );
                   })
                 )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 5: STUDENT CABINET CONTROLS */}
-        {activeTab === 'cabinet' && (
-          <div className="space-y-6">
-            {!cabinet ? (
-              /* Provision Cabinet if missing */
-              <div className="bg-[#12131a]/85 border border-dashed border-white/10 rounded-2xl p-10 text-center max-w-lg mx-auto space-y-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#F4B5CD]/10 border border-[#F4B5CD]/20 flex items-center justify-center mx-auto text-xl">
-                  🎓
-                </div>
-                <div>
-                  <h4 className="font-serif text-sm text-white">Личный кабинет не создан</h4>
-                  <p className="text-[11px] text-white/40 leading-relaxed mt-1 font-light">
-                    У этого ученика пока нет персонального учебного кабинета. Создайте его, чтобы назначать варианты ЕГЭ/ОГЭ, отслеживать прогресс правильных ответов и разбирать ошибки!
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const cabId = `cab-${Math.random().toString(36).substring(2, 11)}`;
-                    const newCabinet: StudentCabinet = {
-                      id: cabId,
-                      studentId: student.id,
-                      studentName: student.name,
-                      tutorId: user?.uid || safeStorage.getItem('guest_tutor_id') || 'guest',
-                      createdAt: new Date().toISOString(),
-                      assignedTests: []
-                    };
-                    onUpdateStudent({ ...student, cabinetId: cabId });
-                    if (onUpdateCabinets) {
-                      onUpdateCabinets({
-                        ...cabinets,
-                        [cabId]: newCabinet
-                      });
-                    }
-                  }}
-                  className="px-5 py-2.5 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/20 text-[#F4B5CD] rounded-xl text-[10px] uppercase tracking-wider font-bold transition cursor-pointer"
-                >
-                  Создать Личный кабинет
-                </button>
-              </div>
-            ) : (
-              /* Active Cabinet UI */
-              <div className="space-y-6">
-                
-                {/* Link display & copier card */}
-                <div className="bg-[#12131a]/85 border border-white/5 rounded-2xl p-5 shadow-xl space-y-4">
-                  <div>
-                    <span className="text-[9px] uppercase tracking-widest text-[#F4B5CD] font-bold">Личный кабинет ученика</span>
-                    <h4 className="font-serif text-sm text-white mt-0.5">Постоянная ссылка для доступа</h4>
-                    <p className="text-[10px] text-white/40 font-light mt-0.5">
-                      Ученику не требуется регистрация или вход через Google. Передайте эту ссылку — она действует всегда!
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}${window.location.pathname}?cabinet=${student.cabinetId}`}
-                      className="flex-1 text-xs px-3 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white/70 select-all focus:outline-none font-mono"
-                    />
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const link = `${window.location.origin}${window.location.pathname}?cabinet=${student.cabinetId}`;
-                          copyToClipboard(link);
-                          setCabinetCopied(true);
-                          setTimeout(() => setCabinetCopied(false), 2000);
-                        }}
-                        className="flex-1 sm:flex-initial px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {cabinetCopied ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Скопировано!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>Копировать</span>
-                          </>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenCabinet && onOpenCabinet(student.cabinetId!)}
-                        className="flex-1 sm:flex-initial px-4 py-2 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/20 text-[#F4B5CD] text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Войти в кабинет</span>
-                      </button>
-                      <a
-                        href={`${window.location.origin}${window.location.pathname}?cabinet=${student.cabinetId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-[10px] uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center gap-1.5"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Открыть в новой вкладке</span>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Assignment box */}
-                <div className="bg-[#12131a]/60 border border-white/5 p-5 rounded-2xl shadow-lg space-y-4">
-                  <h4 className="text-xs uppercase tracking-wider font-semibold text-white/80">
-                    Назначить новый тест из библиотеки
-                  </h4>
-
-                  {!testTemplates || testTemplates.length === 0 ? (
-                    <p className="text-xs text-white/35 italic">
-                      В библиотеке нет созданных вариантов. Перейдите на вкладку "Тесты" (значок 📋 вверху), чтобы создать тесты!
-                    </p>
-                  ) : (
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <select
-                        value={selectedTemplateToAssign}
-                        onChange={(e) => setSelectedTemplateToAssign(e.target.value)}
-                        className="flex-1 text-xs px-3.5 py-2.5 border border-white/10 bg-black/40 text-white rounded-xl focus:outline-none focus:border-[#F4B5CD]"
-                      >
-                        <option value="">-- Выберите тест из библиотеки --</option>
-                        {testTemplates.map(tmpl => (
-                          <option key={tmpl.id} value={tmpl.id} className="bg-[#12131a]">
-                            [{tmpl.type}] {tmpl.title} ({tmpl.questions?.length || 0} зад.)
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={!selectedTemplateToAssign}
-                        onClick={() => {
-                          const selectedTemplate = testTemplates?.find(t => t.id === selectedTemplateToAssign);
-                          if (selectedTemplate) {
-                            const newAssigned: AssignedTest = {
-                              id: 'assigned-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-                              templateId: selectedTemplate.id,
-                              title: selectedTemplate.title,
-                              type: selectedTemplate.type,
-                              questions: JSON.parse(JSON.stringify(selectedTemplate.questions)),
-                              status: 'pending',
-                              assignedAt: new Date().toISOString()
-                            };
-                            const updatedCabinet = {
-                              ...cabinet,
-                              assignedTests: [newAssigned, ...(cabinet.assignedTests || [])]
-                            };
-                            if (onUpdateCabinets) {
-                              onUpdateCabinets({
-                                ...cabinets,
-                                [student.cabinetId!]: updatedCabinet
-                              });
-                            }
-                            setSelectedTemplateToAssign('');
-                            alert(`Тест успешно назначен ученику!`);
-                          }
-                        }}
-                        className="px-5 py-2.5 bg-[#F4B5CD]/15 hover:bg-[#F4B5CD]/25 border border-[#F4B5CD]/20 text-[#F4B5CD] text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
-                      >
-                        Назначить
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Assigned tests lists */}
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-sans uppercase text-white/40 tracking-widest font-extrabold pb-1 border-b border-white/5">
-                    Назначенные тесты ({cabinet.assignedTests?.length || 0})
-                  </h4>
-
-                  {!cabinet.assignedTests || cabinet.assignedTests.length === 0 ? (
-                    <p className="text-xs text-white/30 italic text-center py-6">
-                      Ученику пока не назначено ни одного теста.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {cabinet.assignedTests.map(test => {
-                        const isSolved = test.status === 'submitted';
-                        return (
-                          <div
-                            key={test.id}
-                            className="bg-[#12131a]/50 border border-white/5 p-4 rounded-xl flex flex-col justify-between min-h-[120px] hover:border-white/10 transition"
-                          >
-                            <div>
-                              <div className="flex justify-between items-start gap-2 mb-2">
-                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold font-mono bg-[#F4B5CD]/10 text-[#F4B5CD] border border-[#F4B5CD]/15">
-                                  {test.type}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded text-[8px] font-bold font-mono ${
-                                  isSolved 
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15'
-                                    : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/15 animate-pulse'
-                                }`}>
-                                  {isSolved ? 'Решен' : 'В процессе'}
-                                </span>
-                              </div>
-
-                              <h5 className="font-serif text-xs font-semibold text-white/90 line-clamp-2 font-medium">
-                                {test.title}
-                              </h5>
-                              <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] text-white/35 font-mono mt-1">
-                                <span>Назначен: {new Date(test.assignedAt).toLocaleDateString()}</span>
-                                {isSolved && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-[#F4B5CD] font-bold">Балл: {test.score}/{test.totalQuestions}</span>
-                                    {test.timeSpent !== undefined && (
-                                      <>
-                                        <span>•</span>
-                                        <span className="text-[#C3B4FC]">⏱️ {Math.floor(test.timeSpent / 60)}м {test.timeSpent % 60}с</span>
-                                      </>
-                                    )}
-                                    {test.tabSwitches !== undefined && (
-                                      <>
-                                        <span>•</span>
-                                        <span className={test.tabSwitches > 0 ? 'text-rose-400 font-extrabold' : 'text-emerald-400 font-bold'}>🚫 Сворачиваний: {test.tabSwitches}</span>
-                                      </>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 mt-4 pt-2.5 border-t border-white/5">
-                              {isSolved && (
-                                <button
-                                  type="button"
-                                  onClick={() => setViewingCabinetTest(test)}
-                                  className="flex-1 py-1.5 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/20 text-[#F4B5CD] text-[9px] font-bold uppercase tracking-wider rounded-lg border border-[#F4B5CD]/10 transition cursor-pointer"
-                                >
-                                  Посмотреть ошибки
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (confirm(`Отозвать тест "${test.title}"? Это удалит все результаты решения.`)) {
-                                    const updated = cabinet.assignedTests.filter(t => t.id !== test.id);
-                                    const updatedCabinet = { ...cabinet, assignedTests: updated };
-                                    if (onUpdateCabinets) {
-                                      onUpdateCabinets({ ...cabinets, [student.cabinetId!]: updatedCabinet });
-                                    }
-                                  }
-                                }}
-                                className="px-2.5 py-1.5 bg-white/5 hover:bg-rose-500/10 text-white/30 hover:text-rose-400 rounded-lg transition cursor-pointer"
-                                title="Отозвать тест"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Dynamic Cabinet Test Results Inspector Modal */}
-        {viewingCabinetTest && (
-          <div className="fixed inset-0 bg-[#07080a]/85 backdrop-blur-md z-[190] flex items-center justify-center p-4 animate-fadeIn">
-            <div className="bg-[#12131a] border border-white/10 w-full max-w-2xl rounded-2xl p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto custom-scrollbar space-y-4">
-              <button
-                type="button"
-                onClick={() => setViewingCabinetTest(null)}
-                className="absolute top-4 right-4 p-1 hover:bg-white/5 text-white/40 hover:text-white rounded-lg transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <span className="text-[9px] font-mono font-bold uppercase bg-[#F4B5CD]/15 border border-[#F4B5CD]/25 text-[#F4B5CD] px-2 py-0.5 rounded">
-                Инспектор решений ученика
-              </span>
-              <h3 className="font-serif text-base text-white mt-1.5 pr-6 line-clamp-1 font-medium">
-                {viewingCabinetTest.title}
-              </h3>
-              <p className="text-[10px] text-white/40 font-mono -mt-1">
-                Сдано: {viewingCabinetTest.submittedAt ? new Date(viewingCabinetTest.submittedAt).toLocaleString() : ''} • Результат: <strong className="text-[#F4B5CD] font-bold">{viewingCabinetTest.score} / {viewingCabinetTest.totalQuestions} правильных</strong>
-              </p>
-
-              {/* Stats Strip */}
-              <div className="grid grid-cols-2 gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl font-mono text-[10px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-white/45">⏱️ Время выполнения:</span>
-                  <span className="text-[#C3B4FC] font-bold">
-                    {viewingCabinetTest.timeSpent !== undefined ? (
-                      `${Math.floor(viewingCabinetTest.timeSpent / 60)} мин ${viewingCabinetTest.timeSpent % 60} сек`
-                    ) : (
-                      '—'
-                    )}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-white/45">🚫 Сворачиваний вкладки:</span>
-                  <span className={`font-bold ${viewingCabinetTest.tabSwitches && viewingCabinetTest.tabSwitches > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                    {viewingCabinetTest.tabSwitches !== undefined ? `${viewingCabinetTest.tabSwitches} раз` : '—'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-3.5 pt-2">
-                {viewingCabinetTest.questions.map((q, idx) => {
-                  const studentAns = viewingCabinetTest.answers?.[q.id];
-                  const isCorrect = viewingCabinetTest.checkedResults?.[q.id];
-                  const isDiscussed = viewingCabinetTest.wantToDiscuss?.[q.id];
-
-                  return (
-                    <div
-                      key={q.id}
-                      className={`p-4 rounded-xl border space-y-2.5 transition ${
-                        isCorrect
-                          ? 'bg-emerald-500/[0.02] border-emerald-500/10'
-                          : 'bg-rose-500/[0.02] border-rose-500/10'
-                      }`}
-                    >
-                      <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
-                        <span className="text-[9px] font-mono font-bold text-white/35 uppercase">
-                          Задание {idx + 1} ({q.type === 'short' ? 'краткий' : 'выбор'})
-                        </span>
-
-                        <div className="flex items-center gap-1.5">
-                          {isDiscussed && (
-                            <span className="px-2 py-0.5 rounded text-[8px] font-bold font-mono bg-[#C3B4FC]/10 text-[#C3B4FC] border border-[#C3B4FC]/15 uppercase tracking-wider animate-pulse">
-                              Просит разобрать 🙋‍♀️
-                            </span>
-                          )}
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold ${
-                            isCorrect 
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                          }`}>
-                            {isCorrect ? 'ВЕРНО' : 'ОШИБКА'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-[11px] text-white/75 whitespace-pre-wrap leading-relaxed font-light font-sans">
-                        {q.text}
-                      </p>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[10px]">
-                        <div className="p-2.5 bg-white/[0.02] border border-white/5 rounded-lg">
-                          <p className="text-[8px] uppercase font-bold text-white/30 mb-0.5">Ответ ученика:</p>
-                          <p className="font-serif text-white/85">
-                            {q.type === 'short' ? (
-                              studentAns || <span className="text-white/20 italic">Пусто</span>
-                            ) : q.type === 'single' ? (
-                              q.options?.[studentAns] || <span className="text-white/20 italic">Не выбрано</span>
-                            ) : (
-                              ((studentAns as number[]) || []).map(idx => q.options?.[idx]).join(', ') || <span className="text-white/20 italic">Не выбрано</span>
-                            )}
-                          </p>
-                        </div>
-                        <div className="p-2.5 bg-[#F4B5CD]/5 border border-[#F4B5CD]/10 rounded-lg">
-                          <p className="text-[8px] uppercase font-bold text-[#F4B5CD] mb-0.5">Ключ правильного ответа:</p>
-                          <p className="font-serif text-[#F4B5CD] font-medium">
-                            {q.type === 'short' ? (
-                              q.correctAnswer
-                            ) : q.type === 'single' ? (
-                              q.options?.[(q.correctOptions || []).findIndex(v => v === true)]
-                            ) : (
-                              (q.correctOptions || [])
-                                .map((val, idx) => (val ? q.options?.[idx] : null))
-                                .filter(Boolean)
-                                .join(', ')
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </div>
           </div>
