@@ -3,8 +3,9 @@ import {
   Lock, Unlock, Key, Plus, Trash2, Copy, Check, 
   Edit3, Search, Calendar, X, Eye, EyeOff, 
   Image as ImageIcon, Folder, Upload, Download, Tag, Layers,
-  Notebook, Flower2
+  Notebook, Flower2, Sparkles
 } from 'lucide-react';
+import { FanficDesk } from './FanficDesk';
 
 interface SecretNote {
   id: string;
@@ -168,8 +169,8 @@ export const SecretNotes: React.FC<SecretNotesProps> = ({ onLockChange }) => {
   const [pinError, setPinError] = useState(false);
   const [shake, setShake] = useState(false);
 
-  // Sub-tab selection (Text notes vs Images Vault)
-  const [subTab, setSubTab] = useState<'text' | 'images'>('text');
+  // Sub-tab selection (Text notes vs Images Vault vs Fanfic desk)
+  const [subTab, setSubTab] = useState<'text' | 'images' | 'fanfic'>('text');
 
   // Notes state
   const [notes, setNotes] = useState<SecretNote[]>(() => {
@@ -593,6 +594,20 @@ export const SecretNotes: React.FC<SecretNotesProps> = ({ onLockChange }) => {
           >
             <Flower2 className="w-5 h-5" />
           </button>
+          <button
+            onClick={() => {
+              setSubTab('fanfic');
+              setSearchQuery('');
+            }}
+            className={`p-2.5 rounded-lg transition duration-200 flex items-center justify-center cursor-pointer ${
+              subTab === 'fanfic'
+                ? 'bg-[#F4B5CD] text-[#12131a] shadow-[0_0_12px_rgba(244,181,205,0.4)]'
+                : 'text-white/60 hover:text-white hover:bg-white/[0.03]'
+            }`}
+            title="Конструктор Персонажей & Лора (Перо)"
+          >
+            <Sparkles className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Dynamic Search & Actions */}
@@ -602,7 +617,7 @@ export const SecretNotes: React.FC<SecretNotesProps> = ({ onLockChange }) => {
             <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-white/30" />
             <input
               type="text"
-              placeholder={subTab === 'text' ? "Поиск по тексту заметки..." : "Поиск по названию/группе..."}
+              placeholder={subTab === 'text' ? "Поиск по тексту заметки..." : subTab === 'images' ? "Поиск по названию/группе..." : "Поиск по героям или лору..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 bg-white/[0.03] hover:bg-white/[0.06] focus:bg-[#12131a] border border-white/10 hover:border-white/20 focus:border-[#F4B5CD]/50 rounded-xl text-xs text-white placeholder-white/30 focus:outline-none transition duration-150"
@@ -617,7 +632,7 @@ export const SecretNotes: React.FC<SecretNotesProps> = ({ onLockChange }) => {
               {showAddForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
               <span>{showAddForm ? 'Закрыть' : 'Добавить'}</span>
             </button>
-          ) : (
+          ) : subTab === 'images' ? (
             <label className="px-4 py-2 bg-[#F4B5CD]/10 hover:bg-[#F4B5CD]/18 border border-[#F4B5CD]/35 hover:border-[#F4B5CD]/50 text-[#F4B5CD] text-[10px] uppercase tracking-widest font-extrabold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
               <span>Загрузить</span>
@@ -629,7 +644,7 @@ export const SecretNotes: React.FC<SecretNotesProps> = ({ onLockChange }) => {
                 className="hidden" 
               />
             </label>
-          )}
+          ) : null}
 
           <button
             onClick={handleLock}
@@ -1111,6 +1126,11 @@ export const SecretNotes: React.FC<SecretNotesProps> = ({ onLockChange }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* -------------------- FANFICTION WORKSPACE -------------------- */}
+      {subTab === 'fanfic' && (
+        <FanficDesk />
       )}
 
       {/* -------------------- CUSTOM DELETE CONFIRMATION MODAL -------------------- */}

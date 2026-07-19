@@ -549,7 +549,17 @@ export default function App() {
       <div className="bg-gradient-to-r from-[#12131a] via-[#1c1421] to-[#12131a] border-b border-white/[0.03] text-center py-1.5 px-4 text-[10px] tracking-[0.25em] text-[#F4B5CD]/30 uppercase select-none font-medium flex items-center justify-center gap-2">
         <span>✦</span>
         <span>Кто сдох, тот лох</span>
-        <span>✦</span>
+        <span 
+          onClick={() => {
+            setActiveTab('secret_notes');
+            setSelectedStudentId(null);
+            setFilterDebtOnly(false);
+          }}
+          className="cursor-pointer hover:text-[#F4B5CD] active:scale-90 transition-all duration-150"
+          title="Secret notes entry"
+        >
+          ✦
+        </span>
       </div>
 
       {/* Universal Global Header Banner Navigation */}
@@ -731,21 +741,6 @@ export default function App() {
               <NeonCrossIcon className="w-5 h-5 shrink-0" />
             </button>
 
-            <button
-              onClick={() => {
-                setActiveTab('secret_notes');
-                setSelectedStudentId(null);
-                setFilterDebtOnly(false);
-              }}
-              className={`cursor-pointer transition duration-200 pb-1 flex items-center justify-center ${
-                activeTab === 'secret_notes' && !selectedStudentId
-                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold scale-110' 
-                  : 'text-white/40 hover:text-white hover:scale-110'
-              }`}
-              title="Секретные заметки"
-            >
-              <Moon className="w-4.5 h-4.5 text-[#F4B5CD] shrink-0" />
-            </button>
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
