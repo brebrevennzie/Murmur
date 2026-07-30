@@ -26,6 +26,7 @@ import { PassMockModal } from './components/PassMockModal';
 import { WaterTracker } from './components/WaterTracker';
 import { UsefulLinks } from './components/UsefulLinks';
 import { SecretNotes } from './components/SecretNotes';
+import { MaterialsVault } from './components/MaterialsVault';
 
 export const NeonCrossIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg viewBox="0 0 24 24" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -44,7 +45,7 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>(() => syncAllStudents(getInitialStudents()));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'links' | 'secret_notes'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'links' | 'secret_notes' | 'materials'>('dashboard');
 
   // Dynamic Theme (gothic or cosmic)
   const [theme, setTheme] = useState<'gothic' | 'cosmic'>(() => {
@@ -355,7 +356,16 @@ export default function App() {
     handleSignOut,
     isConnectionBlocked,
     reconnectSync,
-  } = useFirebaseSync(students, setStudents, syllabusPrograms, setSyllabusPrograms);
+  } = useFirebaseSync(
+    students, 
+    setStudents, 
+    syllabusPrograms, 
+    setSyllabusPrograms,
+    quickTodos,
+    setQuickTodos,
+    reminders,
+    setReminders
+  );
 
   // Ensure guest tutor has a stable identifier if they are not logged in
   useEffect(() => {
@@ -741,6 +751,22 @@ export default function App() {
               <NeonCrossIcon className="w-5 h-5 shrink-0" />
             </button>
 
+            <button
+              onClick={() => {
+                setActiveTab('materials');
+                setSelectedStudentId(null);
+                setFilterDebtOnly(false);
+              }}
+              className={`cursor-pointer transition duration-200 pb-1 flex items-center justify-center ${
+                activeTab === 'materials' && !selectedStudentId
+                  ? 'text-white border-b border-[#F4B5CD] opacity-100 font-bold scale-125' 
+                  : 'text-white/50 hover:text-white hover:scale-110'
+              }`}
+              title="Хранилище материалов"
+            >
+              <Heart className="w-5 h-5 text-[#F4B5CD] fill-[#F4B5CD] shrink-0" />
+            </button>
+
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
@@ -830,6 +856,10 @@ export default function App() {
       ) : activeTab === 'secret_notes' ? (
         <div className="animate-fadeIn opacity-90 text-white/85 py-6">
           <SecretNotes />
+        </div>
+      ) : activeTab === 'materials' ? (
+        <div className="animate-fadeIn py-4">
+          <MaterialsVault />
         </div>
       ) : (
         /* Home Workspace view */

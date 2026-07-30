@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { X, Cloud, CloudOff, Lock, Mail, RefreshCw, AlertCircle, CheckCircle, ArrowRight, LogOut, Shield, Download, Upload } from 'lucide-react';
+import { X, Cloud, CloudOff, Lock, Mail, RefreshCw, AlertCircle, CheckCircle, ArrowRight, LogOut, Shield, Download, Upload, Eye, EyeOff } from 'lucide-react';
 import { Student, SyllabusProgram } from '../types';
 
 interface FirebaseSyncModalProps {
@@ -39,6 +39,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [localLoading, setLocalLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -348,15 +349,22 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
 
               <div className="space-y-3">
                 <div className="space-y-1">
-                  <span className="text-[10px] uppercase tracking-wider font-mono text-white/40 block font-semibold">Ваш Email:</span>
+                  <span className="text-[10px] uppercase tracking-wider font-mono text-white/40 block font-semibold">Ваш Email или Логин:</span>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-white/30 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
-                      type="email"
+                      type="text"
                       required
-                      placeholder="e.g. tutor@example.com"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="username"
+                      placeholder="например: tutor@example.com или tutor123"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (authError) setAuthError(null);
+                      }}
                       className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder-white/30 text-xs focus:outline-none focus:border-[#F4B5CD]/50"
                     />
                   </div>
@@ -367,14 +375,26 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                   <div className="relative">
                     <Lock className="w-4 h-4 text-white/30 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       required
                       minLength={6}
+                      autoComplete={isSignUpMode ? 'new-password' : 'current-password'}
                       placeholder="Минимум 6 символов"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder-white/30 text-xs focus:outline-none focus:border-[#F4B5CD]/50"
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (authError) setAuthError(null);
+                      }}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 pl-10 pr-10 text-white placeholder-white/30 text-xs focus:outline-none focus:border-[#F4B5CD]/50"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 p-1"
+                      title={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
                   </div>
                 </div>
               </div>

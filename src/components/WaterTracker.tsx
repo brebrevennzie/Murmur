@@ -15,6 +15,21 @@ export const WaterTracker: React.FC = () => {
     localStorage.setItem('water_ml', ml.toString());
   }, [ml]);
 
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('water_ml');
+      if (saved) {
+        setMl(Number(saved));
+      }
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('app_cloud_synced', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('app_cloud_synced', handleSync);
+    };
+  }, []);
+
   const addWater = (amount: number) => {
     setMl(prev => Math.max(0, prev + amount));
   };

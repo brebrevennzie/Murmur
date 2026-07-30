@@ -2,15 +2,40 @@ import { useState, useEffect, useRef } from 'react';
 import { User, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { Student, SyllabusProgram } from '../types';
+import { Student, SyllabusProgram, CalendarReminder } from '../types';
 import { syncAllStudents } from '../utils/paymentSync';
 import { safeStorage } from '../utils/safeStorage';
+
+interface QuickTodo {
+  id: string;
+  text: string;
+  completed: boolean;
+  completedAtDate?: string;
+}
+
+const safeGetItem = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return null;
+  }
+};
+
+const safeSetItem = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {}
+};
 
 export function useFirebaseSync(
   students: Student[],
   setStudents: (s: Student[]) => void,
   syllabusPrograms: SyllabusProgram[],
-  setSyllabusPrograms: (p: SyllabusProgram[]) => void
+  setSyllabusPrograms: (p: SyllabusProgram[]) => void,
+  quickTodos?: QuickTodo[],
+  setQuickTodos?: (t: QuickTodo[] | ((prev: QuickTodo[]) => QuickTodo[])) => void,
+  reminders?: CalendarReminder[],
+  setReminders?: (r: CalendarReminder[] | ((prev: CalendarReminder[]) => CalendarReminder[])) => void
 ) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -24,11 +49,16 @@ export function useFirebaseSync(
   const programsRef = useRef<SyllabusProgram[]>(syllabusPrograms);
   programsRef.current = syllabusPrograms;
 
-  // Track the last synced data from/to the cloud to avoid redundant or loop writes/overwrites
-  const lastCloudStudentsRef = useRef<string>('');
-  const lastCloudProgramsRef = useRef<string>('');
+  const quickTodosRef = useRef<QuickTodo[] | undefined>(quickTodos);
+  quickTodosRef.current = quickTodos;
 
-  // Tracks if the first load from Firestore has finished to avoid local default data race condition
+  const remindersRef = useRef<CalendarReminder[] | undefined>(reminders);
+  remindersRef.current = reminders;
+
+  // Track the last synced cloud payload signature to avoid redundant or loop writes
+  const lastCloudPayloadRef = useRef<string>('');
+
+  // Tracks if the first load from Firestore has finished
   const hasInitialLoadCompleted = useRef(false);
   const [isConnectionBlocked, setIsConnectionBlocked] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -86,7 +116,6 @@ export function useFirebaseSync(
         console.error('Failed to parse user local students:', e);
       }
     } else {
-      // Revert back to the main guest data when logging out
       if (!user) {
         const guestStudents = safeStorage.getItem('tutor_students_db');
         if (guestStudents) {
@@ -120,12 +149,10 @@ export function useFirebaseSync(
       }
     }
     
-    // Clear cloud refs baseline when shifting accounts
-    lastCloudStudentsRef.current = '';
-    lastCloudProgramsRef.current = '';
+    lastCloudPayloadRef.current = '';
   }, [user]);
 
-  // Sync state changes directly to the appropriate local storage keys (guest or user-specific)
+  // Sync state changes directly to local storage keys
   useEffect(() => {
     const studentKey = user ? `tutor_students_db_${user.uid}` : 'tutor_students_db';
     const programKey = user ? `tutor_syllabus_programs_${user.uid}` : 'tutor_syllabus_programs';
@@ -134,7 +161,7 @@ export function useFirebaseSync(
     safeStorage.setItem(programKey, JSON.stringify(syllabusPrograms));
   }, [students, syllabusPrograms, user]);
 
-  // Set up real-time listener when user changes or refreshKey changes (VPN switch)
+  // Set up real-time listener when user changes or refreshKey changes
   useEffect(() => {
     if (!user) {
       setSyncStatus('idle');
@@ -147,7 +174,6 @@ export function useFirebaseSync(
     setSyncStatus('syncing');
     setIsConnectionBlocked(false);
 
-    // Timeout of 5 seconds to detect proxy or network blocks (e.g. Google services in Russia)
     const timeoutId = setTimeout(() => {
       if (!hasInitialLoadCompleted.current) {
         setIsConnectionBlocked(true);
@@ -176,126 +202,95 @@ export function useFirebaseSync(
         const isDbPristine = isPristineDefault(dbStudents);
         const isLocalPristine = isPristineDefault(localStudents);
 
-        // Fetch timestamps (in milliseconds) using user-specific local keys
         const cloudLastUpdated = data.lastUpdated ? new Date(data.lastUpdated).getTime() : 0;
         const localLastUpdatedKey = `tutor_db_last_updated_${user.uid}`;
         const localLastUpdatedStr = safeStorage.getItem(localLastUpdatedKey);
         const localLastUpdated = localLastUpdatedStr ? new Date(localLastUpdatedStr).getTime() : 0;
-        
+
+        // Apply incoming cloud data across ALL app sections
+        const applyCloudData = () => {
+          if (data.students) {
+            setStudents(dbStudents);
+            const studentKey = `tutor_students_db_${user.uid}`;
+            safeStorage.setItem(studentKey, JSON.stringify(dbStudents));
+          }
+
+          if (data.programs) {
+            setSyllabusPrograms(data.programs);
+            const programKey = `tutor_syllabus_programs_${user.uid}`;
+            safeStorage.setItem(programKey, JSON.stringify(data.programs));
+          }
+
+          if (data.quickTodos && setQuickTodos) {
+            setQuickTodos(data.quickTodos);
+            safeSetItem('quick_notes_todos', JSON.stringify(data.quickTodos));
+          }
+
+          if (data.reminders && setReminders) {
+            setReminders(data.reminders);
+            safeSetItem('calendar_reminders', JSON.stringify(data.reminders));
+          }
+
+          if (data.usefulLinks) {
+            const val = typeof data.usefulLinks === 'string' ? data.usefulLinks : JSON.stringify(data.usefulLinks);
+            safeSetItem('useful_links', val);
+          }
+
+          if (data.secretNotesData) {
+            safeSetItem('secret_notes_data', data.secretNotesData);
+          }
+
+          if (data.fanficCharacters) {
+            const val = typeof data.fanficCharacters === 'string' ? data.fanficCharacters : JSON.stringify(data.fanficCharacters);
+            safeSetItem('secret_notes_fanfic_characters', val);
+          }
+
+          if (data.fanficLores) {
+            const val = typeof data.fanficLores === 'string' ? data.fanficLores : JSON.stringify(data.fanficLores);
+            safeSetItem('secret_notes_fanfic_lores', val);
+          }
+
+          if (data.gradingCriteria) {
+            const val = typeof data.gradingCriteria === 'string' ? data.gradingCriteria : JSON.stringify(data.gradingCriteria);
+            safeSetItem('tutor_grading_criteria', val);
+          }
+
+          if (data.waterMl !== undefined && data.waterMl !== null) {
+            safeSetItem('water_ml', String(data.waterMl));
+          }
+
+          if (data.lastUpdated) {
+            safeStorage.setItem(localLastUpdatedKey, data.lastUpdated);
+          }
+
+          // Trigger custom event so all active tab components reload state from localStorage
+          window.dispatchEvent(new Event('app_cloud_synced'));
+          window.dispatchEvent(new Event('storage'));
+        };
+
         if (!hasInitialLoadCompleted.current) {
-          // ================= INITIAL LOAD SYNC DECISION =================
-          // Safety check 1: if local data contains real user edits but cloud contains only unedited demo students,
-          // we should push local to cloud rather than downloading demo data.
           if (!isLocalPristine && isDbPristine) {
             hasInitialLoadCompleted.current = true;
-            pushLocalToCloud(user.uid, localStudents, programsRef.current);
-            
-            if (data.programs) {
-              const dbProgramsStr = JSON.stringify(data.programs);
-              const localProgramsStr = JSON.stringify(programsRef.current);
-              lastCloudProgramsRef.current = dbProgramsStr;
-              if (dbProgramsStr !== localProgramsStr) {
-                setSyllabusPrograms(data.programs);
-                const programKey = `tutor_syllabus_programs_${user.uid}`;
-                safeStorage.setItem(programKey, dbProgramsStr);
-              }
-            }
-          } 
-          // Safety check 2: if local data contains real user edits and has been updated more recently than the cloud,
-          // push the local data to cloud.
-          else if (!isLocalPristine && localLastUpdated > cloudLastUpdated) {
+            pushLocalToCloud(user.uid);
+          } else if (!isLocalPristine && localLastUpdated > cloudLastUpdated) {
             hasInitialLoadCompleted.current = true;
-            pushLocalToCloud(user.uid, localStudents, programsRef.current);
-          } 
-          // Default sync behavior: Cloud is newer/same, or local is pristine/default: download cloud data
-          else {
-            if (data.students) {
-              const dbStudentsStr = JSON.stringify(dbStudents);
-              const localStudentsStr = JSON.stringify(localStudents);
-              
-              lastCloudStudentsRef.current = dbStudentsStr;
-              
-              if (dbStudentsStr !== localStudentsStr) {
-                setStudents(dbStudents);
-                const studentKey = `tutor_students_db_${user.uid}`;
-                safeStorage.setItem(studentKey, dbStudentsStr);
-              }
-            }
-            
-            if (data.programs) {
-              const dbProgramsStr = JSON.stringify(data.programs);
-              const localProgramsStr = JSON.stringify(programsRef.current);
-              
-              lastCloudProgramsRef.current = dbProgramsStr;
-              
-              if (dbProgramsStr !== localProgramsStr) {
-                setSyllabusPrograms(data.programs);
-                const programKey = `tutor_syllabus_programs_${user.uid}`;
-                safeStorage.setItem(programKey, dbProgramsStr);
-              }
-            }
-
-            // Align the local timestamp with the cloud timestamp
-            if (data.lastUpdated) {
-              const lastUpdatedKey = `tutor_db_last_updated_${user.uid}`;
-              safeStorage.setItem(lastUpdatedKey, data.lastUpdated);
-            }
-            
+            pushLocalToCloud(user.uid);
+          } else {
+            applyCloudData();
             hasInitialLoadCompleted.current = true;
             setSyncStatus('saved');
           }
         } else {
-          // ================= REAL-TIME UPDATES (AFTER INITIAL LOAD) =================
-          // Skip updating from cloud if we have active pending local writes (latency compensation)
           if (docSnap.metadata.hasPendingWrites) {
             return;
           }
-
-          // Pull down cloud changes only if local state matches the last known cloud state.
-          // If they differ, it means we have unsaved local changes which are still being debounced/pushed,
-          // so we should not overwrite them with the old/incoming cloud state.
-          const localStudentsStr = JSON.stringify(localStudents);
-          const localProgramsStr = JSON.stringify(programsRef.current);
-          const hasUnsavedStudents = lastCloudStudentsRef.current !== '' && localStudentsStr !== lastCloudStudentsRef.current;
-          const hasUnsavedPrograms = lastCloudProgramsRef.current !== '' && localProgramsStr !== lastCloudProgramsRef.current;
-
-          // If cloud timestamp is strictly greater, it means the cloud has a newer save from another device.
-          // In that case, we MUST pull down the cloud data and align our local state.
-          const isCloudNewer = cloudLastUpdated > localLastUpdated;
-          const shouldUpdateStudents = isCloudNewer || !hasUnsavedStudents;
-          const shouldUpdatePrograms = isCloudNewer || !hasUnsavedPrograms;
-
-          if (shouldUpdateStudents && data.students) {
-            const dbStudentsStr = JSON.stringify(dbStudents);
-            if (dbStudentsStr !== localStudentsStr) {
-              lastCloudStudentsRef.current = dbStudentsStr;
-              setStudents(dbStudents);
-              const studentKey = `tutor_students_db_${user.uid}`;
-              safeStorage.setItem(studentKey, dbStudentsStr);
-            }
-          }
-
-          if (shouldUpdatePrograms && data.programs) {
-            const dbProgramsStr = JSON.stringify(data.programs);
-            if (dbProgramsStr !== localProgramsStr) {
-              lastCloudProgramsRef.current = dbProgramsStr;
-              setSyllabusPrograms(data.programs);
-              const programKey = `tutor_syllabus_programs_${user.uid}`;
-              safeStorage.setItem(programKey, dbProgramsStr);
-            }
-          }
-
-          if (data.lastUpdated) {
-            const lastUpdatedKey = `tutor_db_last_updated_${user.uid}`;
-            safeStorage.setItem(lastUpdatedKey, data.lastUpdated);
-          }
-          
+          applyCloudData();
           setSyncStatus('saved');
         }
       } else {
-        // Document doesn't exist yet on firestore, let's push local data as the starting state
+        // Document doesn't exist yet on firestore, let's push local data as starting state
         hasInitialLoadCompleted.current = true;
-        pushLocalToCloud(user.uid, studentsRef.current, programsRef.current);
+        pushLocalToCloud(user.uid);
       }
     }, (error) => {
       console.error('Firestore listener error:', error);
@@ -310,64 +305,90 @@ export function useFirebaseSync(
     };
   }, [user, refreshKey]);
 
-  // Push changes to cloud whenever students or programs change (de-bounced)
+  // Push full payload changes to cloud whenever students, programs, todos, or reminders change
   useEffect(() => {
     if (!user || !hasInitialLoadCompleted.current) return;
 
-    // Check if the current state is identical to our last cloud transaction
-    const currentStudentsStr = JSON.stringify(students);
-    const currentProgramsStr = JSON.stringify(syllabusPrograms);
+    const payloadObj = buildPayloadObj(students, syllabusPrograms, quickTodos, reminders);
+    const payloadStr = JSON.stringify(payloadObj);
 
-    if (currentStudentsStr === lastCloudStudentsRef.current && 
-        currentProgramsStr === lastCloudProgramsRef.current) {
+    if (payloadStr === lastCloudPayloadRef.current) {
       setSyncStatus('saved');
       return;
     }
 
     setSyncStatus('syncing');
 
-    // Instantly update the local timestamp so any incoming snapshot during the debounce
-    // is correctly seen as OLDER than our active local edits.
     const timestamp = new Date().toISOString();
     const lastUpdatedKey = `tutor_db_last_updated_${user.uid}`;
     safeStorage.setItem(lastUpdatedKey, timestamp);
     safeStorage.setItem('tutor_db_last_updated', timestamp);
 
     const delayDebounce = setTimeout(() => {
-      pushLocalToCloud(user.uid, students, syllabusPrograms, timestamp);
-    }, 1000); // 1s debounce to avoid rapid Firestore writes
+      pushLocalToCloud(user.uid, timestamp);
+    }, 800);
 
     return () => clearTimeout(delayDebounce);
-  }, [students, syllabusPrograms, user]);
+  }, [students, syllabusPrograms, quickTodos, reminders, user]);
 
-  const pushLocalToCloud = async (userId: string, sList: Student[], pList: SyllabusProgram[], customTimestamp?: string) => {
+  const buildPayloadObj = (
+    sList: Student[], 
+    pList: SyllabusProgram[], 
+    todos?: QuickTodo[], 
+    rems?: CalendarReminder[]
+  ) => {
+    const usefulLinks = safeGetItem('useful_links');
+    const secretNotesData = safeGetItem('secret_notes_data');
+    const fanficCharacters = safeGetItem('secret_notes_fanfic_characters');
+    const fanficLores = safeGetItem('secret_notes_fanfic_lores');
+    const gradingCriteria = safeGetItem('tutor_grading_criteria');
+    const waterMl = safeGetItem('water_ml');
+
+    return {
+      students: sList,
+      programs: pList,
+      quickTodos: todos || quickTodosRef.current || [],
+      reminders: rems || remindersRef.current || [],
+      usefulLinks: usefulLinks ? (usefulLinks.startsWith('[') || usefulLinks.startsWith('{') ? JSON.parse(usefulLinks) : usefulLinks) : [],
+      secretNotesData: secretNotesData || '',
+      fanficCharacters: fanficCharacters ? (fanficCharacters.startsWith('[') || fanficCharacters.startsWith('{') ? JSON.parse(fanficCharacters) : fanficCharacters) : [],
+      fanficLores: fanficLores ? (fanficLores.startsWith('[') || fanficLores.startsWith('{') ? JSON.parse(fanficLores) : fanficLores) : [],
+      gradingCriteria: gradingCriteria ? (gradingCriteria.startsWith('[') || gradingCriteria.startsWith('{') ? JSON.parse(gradingCriteria) : gradingCriteria) : [],
+      waterMl: waterMl ? Number(waterMl) : 0,
+    };
+  };
+
+  const pushLocalToCloud = async (userId: string, customTimestamp?: string) => {
     try {
       const userDocRef = doc(db, 'users', userId);
       const timestamp = customTimestamp || new Date().toISOString();
+      
+      const payload = buildPayloadObj(
+        studentsRef.current, 
+        programsRef.current, 
+        quickTodosRef.current, 
+        remindersRef.current
+      );
+
       const dataToSave = {
-        students: sList,
-        programs: pList,
+        ...payload,
         lastUpdated: timestamp
       };
+
+      lastCloudPayloadRef.current = JSON.stringify(payload);
       
       await setDoc(userDocRef, dataToSave, { merge: true });
       
-      // Update our baseline refs ONLY after successful write confirmation!
-      lastCloudStudentsRef.current = JSON.stringify(sList);
-      lastCloudProgramsRef.current = JSON.stringify(pList);
-      
-      // Save matching local timestamp & user-specific local values
       const studentKey = `tutor_students_db_${userId}`;
       const programKey = `tutor_syllabus_programs_${userId}`;
       const lastUpdatedKey = `tutor_db_last_updated_${userId}`;
       
-      safeStorage.setItem(studentKey, JSON.stringify(sList));
-      safeStorage.setItem(programKey, JSON.stringify(pList));
+      safeStorage.setItem(studentKey, JSON.stringify(studentsRef.current));
+      safeStorage.setItem(programKey, JSON.stringify(programsRef.current));
       safeStorage.setItem(lastUpdatedKey, timestamp);
 
-      // Keep guest fallback keys in sync as a backup
-      safeStorage.setItem('tutor_students_db', JSON.stringify(sList));
-      safeStorage.setItem('tutor_syllabus_programs', JSON.stringify(pList));
+      safeStorage.setItem('tutor_students_db', JSON.stringify(studentsRef.current));
+      safeStorage.setItem('tutor_syllabus_programs', JSON.stringify(programsRef.current));
       safeStorage.setItem('tutor_db_last_updated', timestamp);
       
       setSyncStatus('saved');
@@ -377,21 +398,31 @@ export function useFirebaseSync(
     }
   };
 
+  const formatAuthEmail = (rawInput: string): string => {
+    const clean = rawInput.trim().toLowerCase();
+    if (!clean) return '';
+    if (!clean.includes('@')) {
+      return `${clean}@tutor.app`;
+    }
+    return clean;
+  };
+
   const handleSignIn = async (email: string, pass: string) => {
     setAuthError(null);
     setSyncStatus('syncing');
+    const targetEmail = formatAuthEmail(email);
     try {
-      await signInWithEmailAndPassword(auth, email, pass);
+      await signInWithEmailAndPassword(auth, targetEmail, pass);
     } catch (err: any) {
       console.error('Sign-in error:', err);
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
         setAuthError('Неверный логин или пароль. Проверьте правильность ввода.');
       } else if (err.code === 'auth/invalid-email') {
-        setAuthError('Некорректный адрес электронной почты.');
+        setAuthError('Некорректный логин/email адрес.');
       } else if (err.code === 'auth/too-many-requests') {
         setAuthError('Слишком много попыток входа. Попробуйте позже.');
       } else if (err.code === 'auth/operation-not-allowed') {
-        setAuthError('Регистрация/вход по Email/Password не включены в настройках вашего Firebase-проекта. Перейдите в Firebase Console -> Authentication -> Sign-in method, выберите Email/Password, нажмите Включить (Enable) и сохраните.');
+        setAuthError('Регистрация/вход по Email/Password не включены в настройках вашего Firebase-проекта.');
       } else {
         setAuthError(err.message || 'Ошибка входа в систему.');
       }
@@ -403,18 +434,18 @@ export function useFirebaseSync(
   const handleSignUp = async (email: string, pass: string) => {
     setAuthError(null);
     setSyncStatus('syncing');
+    const targetEmail = formatAuthEmail(email);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      // Wait a moment and then push current local data to start the account
-      await pushLocalToCloud(cred.user.uid, studentsRef.current, programsRef.current);
+      const cred = await createUserWithEmailAndPassword(auth, targetEmail, pass);
+      await pushLocalToCloud(cred.user.uid);
     } catch (err: any) {
       console.error('Sign-up error:', err);
       if (err.code === 'auth/email-already-in-use') {
-        setAuthError('Этот email уже зарегистрирован в системе.');
+        setAuthError('Этот логин/email уже зарегистрирован в системе.');
       } else if (err.code === 'auth/weak-password') {
         setAuthError('Слишком слабый пароль. Пароль должен быть не менее 6 символов.');
       } else if (err.code === 'auth/operation-not-allowed') {
-        setAuthError('Регистрация/вход по Email/Password не включены в настройках вашего Firebase-проекта. Перейдите в Firebase Console -> Authentication -> Sign-in method, выберите Email/Password, нажмите Включить (Enable) и сохраните.');
+        setAuthError('Регистрация/вход по Email/Password не включены в настройках вашего Firebase-проекта.');
       } else {
         setAuthError(err.message || 'Ошибка регистрации нового аккаунта.');
       }
@@ -429,13 +460,10 @@ export function useFirebaseSync(
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      // We don't call pushLocalToCloud here. Instead, our onSnapshot listener in useEffect
-      // will trigger. If the firebase document exists, it loads the existing user's data.
-      // If it doesn't exist, it safely initializes the state. This protects "изменения в гугле" from overwrites.
     } catch (err: any) {
       console.error('Google Sign-in error:', err);
       if (err.code === 'auth/popup-blocked') {
-        setAuthError('Всплывающее окно заблокировано вашим браузером. Пожалуйста, разрешите всплывающие окна в настройках.');
+        setAuthError('Всплывающее окно заблокировано браузером. Разрешите всплывающие окна в настройках.');
       } else {
         setAuthError(err.message || 'Ошибка входа через Google.');
       }
@@ -467,3 +495,4 @@ export function useFirebaseSync(
     reconnectSync,
   };
 }
+

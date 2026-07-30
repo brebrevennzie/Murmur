@@ -178,6 +178,21 @@ export const SecretNotes: React.FC<SecretNotesProps> = ({ onLockChange }) => {
     return decryptNotes(saved);
   });
 
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('secret_notes_data');
+      if (saved) {
+        setNotes(decryptNotes(saved));
+      }
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('app_cloud_synced', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('app_cloud_synced', handleSync);
+    };
+  }, []);
+
   // Images state
   const [images, setImages] = useState<VaultImage[]>([]);
   const [activeGroup, setActiveGroup] = useState<string>('Все');

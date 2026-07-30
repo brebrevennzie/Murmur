@@ -35,6 +35,23 @@ export const UsefulLinks: React.FC = () => {
     localStorage.setItem('useful_links', JSON.stringify(links));
   }, [links]);
 
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('useful_links');
+      if (saved) {
+        try {
+          setLinks(JSON.parse(saved));
+        } catch (e) {}
+      }
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('app_cloud_synced', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('app_cloud_synced', handleSync);
+    };
+  }, []);
+
   const handleAddLink = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
